@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getStatistics } from '../api';
-import { HARDNESS_MAP, LEVEL_MAP, PAIN_LOCATION_MAP } from '../constants';
+import { HARDNESS_MAP, LEVEL_MAP, PAIN_LOCATION_MAP, ALERT_STATUS_MAP, ALERT_TYPE_MAP } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
@@ -11,6 +11,12 @@ export default function Statistics() {
     avg_lifespan: [],
     pain_hotspots: [],
     level_preferences: [],
+    alert_status_distribution: [],
+    alert_type_distribution: [],
+    followup_overdue_count: 0,
+    followup_pending_count: 0,
+    avg_handle_hours: 0,
+    followup_rate: 0,
   });
 
   useEffect(() => {
@@ -47,6 +53,21 @@ export default function Statistics() {
   const pieData = data.pain_hotspots.map(p => ({
     name: p.label,
     value: p.count,
+  }));
+
+  const alertStatusData = (data.alert_status_distribution || []).map(s => ({
+    name: s.label,
+    count: s.count,
+  }));
+
+  const alertTypeData = (data.alert_type_distribution || []).map(t => ({
+    name: t.label,
+    count: t.count,
+  }));
+
+  const alertStatusPie = (data.alert_status_distribution || []).map(s => ({
+    name: s.label,
+    value: s.count,
   }));
 
   return (
@@ -160,6 +181,67 @@ export default function Statistics() {
         </div>
       </div>
 
+      <h3 style={{ fontSize: 18, fontWeight: 700, margin: '28px 0 16px', color: 'var(--text)' }}>预警处置与回访统计</h3>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h3>预警状态分布</h3>
+          {alertStatusPie.length > 0 ? (
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={alertStatusPie} cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} dataKey="value">
+                    {alertStatusPie.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state"><p>暂无数据</p></div>
+          )}
+        </div>
+
+        <div className="stat-card">
+          <h3>预警类型分布</h3>
+          {alertTypeData.length > 0 ? (
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={alertTypeData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="预警数量" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state"><p>暂无数据</p></div>
+          )}
+        </div>
+
+        <div className="stat-card">
+          <h3>各状态预警数量</h3>
+          {alertStatusData.length > 0 ? (
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={alertStatusData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="数量" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state"><p>暂无数据</p></div>
+          )}
+        </div>
+      </div>
+
       <div style={{ marginTop: 24 }}>
         <div className="card">
           <h3 style={{ marginBottom: 16 }}>数据概览</h3>
@@ -181,6 +263,22 @@ export default function Statistics() {
             <div style={{ textAlign: 'center', padding: 16, background: '#f0f8ff', borderRadius: 8 }}>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--info)' }}>{data.avg_lifespan.length > 0 ? Math.round(data.avg_lifespan.reduce((a, b) => a + b.avg_hours, 0) / data.avg_lifespan.length) : 0}h</div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>平均使用寿命</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: 16, background: '#fff0f0', borderRadius: 8 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--danger)' }}>{data.followup_overdue_count}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>回访逾期数</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: 16, background: '#f5f0ff', borderRadius: 8 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--primary)' }}>{data.followup_pending_count}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>待回访数</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: 16, background: '#f0fff8', borderRadius: 8 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--success)' }}>{data.avg_handle_hours}h</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>平均处置时长</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: 16, background: '#fff8f0', borderRadius: 8 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--warning)' }}>{data.followup_rate}%</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>回访完成率</div>
             </div>
           </div>
         </div>

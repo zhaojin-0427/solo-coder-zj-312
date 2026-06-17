@@ -343,6 +343,8 @@ table tr:hover { background: #faf8ff; }
 
 .alert-pending { border-left: 4px solid var(--danger); }
 .alert-acknowledged { border-left: 4px solid var(--warning); }
+.alert-handled { border-left: 4px solid var(--info); }
+.alert-followup { border-left: 4px solid var(--primary); }
 .alert-resolved { border-left: 4px solid var(--success); }
 
 .profile-card {

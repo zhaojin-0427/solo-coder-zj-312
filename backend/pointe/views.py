@@ -7,6 +7,7 @@ from .models import Student, FootProfile, ShoeFitting, TrainingLog, WearAlert
 from .serializers import (
     StudentSerializer, StudentWriteSerializer, FootProfileSerializer,
     ShoeFittingSerializer, TrainingLogSerializer, WearAlertSerializer,
+    WearAlertHandleSerializer, WearAlertFollowupSerializer,
 )
 from .pagination import StandardPagination
 
@@ -125,19 +126,41 @@ class WearAlertViewSet(viewsets.ModelViewSet):
             qs = qs.filter(status=status_filter)
         return qs
 
+    @action(detail=True, methods=['post'], url_path='acknowledge')
+    def acknowledge(self, request, pk=None):
+        alert = self.get_object()
+        alert.status = 'acknowledged'
+        alert.save()
+        serializer = WearAlertSerializer(alert)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='handle')
+    def handle(self, request, pk=None):
+        alert = self.get_object()
+        serializer = WearAlertHandleSerializer(alert, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        alert.status = 'followup' if alert.suggested_followup_date else 'handled'
+        alert.handled_at = timezone.now()
+        alert.save()
+        return Response(WearAlertSerializer(alert).data)
+
+    @action(detail=True, methods=['post'], url_path='followup')
+    def followup(self, request, pk=None):
+        alert = self.get_object()
+        serializer = WearAlertFollowupSerializer(alert, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        alert.status = 'resolved'
+        alert.resolved_at = timezone.now()
+        alert.save()
+        return Response(WearAlertSerializer(alert).data)
+
     @action(detail=True, methods=['post'], url_path='resolve')
     def resolve(self, request, pk=None):
         alert = self.get_object()
         alert.status = 'resolved'
         alert.resolved_at = timezone.now()
-        alert.save()
-        serializer = WearAlertSerializer(alert)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'], url_path='acknowledge')
-    def acknowledge(self, request, pk=None):
-        alert = self.get_object()
-        alert.status = 'acknowledged'
         alert.save()
         serializer = WearAlertSerializer(alert)
         return Response(serializer.data)
@@ -215,9 +238,67 @@ class StatisticsViewSet(viewsets.ViewSet):
             for lp in level_pref
         ]
 
+        alert_status_stats = (
+            WearAlert.objects.values('status')
+            .annotate(count=Count('id'))
+            .order_by('status')
+        )
+        status_map = dict(WearAlert.STATUS_CHOICES)
+        alert_status_distribution = [
+            {
+                'status': s['status'],
+                'label': status_map.get(s['status'], s['status']),
+                'count': s['count']
+            }
+            for s in alert_status_stats
+        ]
+
+        alert_type_stats = (
+            WearAlert.objects.values('alert_type')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        type_map = dict(WearAlert.ALERT_TYPE_CHOICES)
+        alert_type_distribution = [
+            {
+                'alert_type': t['alert_type'],
+                'label': type_map.get(t['alert_type'], t['alert_type']),
+                'count': t['count']
+            }
+            for t in alert_type_stats
+        ]
+
+        today = timezone.now().date()
+        followup_overdue_count = WearAlert.objects.filter(
+            status='followup', suggested_followup_date__lt=today
+        ).count()
+        followup_pending_count = WearAlert.objects.filter(status='followup').count()
+
+        handled_alerts = WearAlert.objects.filter(
+            handled_at__isnull=False, created_at__isnull=False
+        )
+        handle_durations = []
+        for a in handled_alerts:
+            delta = (a.handled_at - a.created_at).total_seconds() / 3600
+            handle_durations.append(round(delta, 1))
+
+        avg_handle_hours = round(sum(handle_durations) / len(handle_durations), 1) if handle_durations else 0
+
+        resolved_with_followup = WearAlert.objects.filter(
+            resolved_at__isnull=False, actual_followup_date__isnull=False
+        ).count()
+        total_resolved = WearAlert.objects.filter(resolved_at__isnull=False).count()
+        followup_rate = round(resolved_with_followup / total_resolved * 100, 1) if total_resolved > 0 else 0
+
         return Response({
             'brand_fit_rate': brand_fit_rate,
             'avg_lifespan': avg_lifespan,
             'pain_hotspots': pain_hotspots,
             'level_preferences': level_preferences,
+            'alert_status_distribution': alert_status_distribution,
+            'alert_type_distribution': alert_type_distribution,
+            'followup_overdue_count': followup_overdue_count,
+            'followup_pending_count': followup_pending_count,
+            'avg_handle_hours': avg_handle_hours,
+            'followup_rate': followup_rate,
         })

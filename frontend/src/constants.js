@@ -77,5 +77,7 @@ export const ALERT_TYPE_MAP = {
 export const ALERT_STATUS_MAP = {
   pending: '待处理',
   acknowledged: '已确认',
+  handled: '已处置',
+  followup: '待回访',
   resolved: '已解决',
 };

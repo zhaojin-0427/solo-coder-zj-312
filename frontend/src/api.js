@@ -26,5 +26,7 @@ export const deleteTrainingLog = (id) => api.delete(`/training-logs/${id}/`);
 export const getWearAlerts = (params) => api.get('/wear-alerts/', { params }).then(r => r.data);
 export const resolveAlert = (id) => api.post(`/wear-alerts/${id}/resolve/`).then(r => r.data);
 export const acknowledgeAlert = (id) => api.post(`/wear-alerts/${id}/acknowledge/`).then(r => r.data);
+export const handleAlert = (id, data) => api.post(`/wear-alerts/${id}/handle/`, data).then(r => r.data);
+export const followupAlert = (id, data) => api.post(`/wear-alerts/${id}/followup/`, data).then(r => r.data);
 
 export const getStatistics = () => api.get('/statistics/').then(r => r.data);

@@ -164,6 +164,8 @@ class WearAlert(models.Model):
     STATUS_CHOICES = [
         ('pending', '待处理'),
         ('acknowledged', '已确认'),
+        ('handled', '已处置'),
+        ('followup', '待回访'),
         ('resolved', '已解决'),
     ]
 
@@ -172,7 +174,13 @@ class WearAlert(models.Model):
     alert_type = models.CharField(max_length=10, choices=ALERT_TYPE_CHOICES, default='replace', verbose_name='预警类型')
     reason = models.TextField(verbose_name='预警原因')
     status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
+    handler = models.CharField(max_length=100, blank=True, verbose_name='处置人')
+    handling_plan = models.TextField(blank=True, verbose_name='处置方案')
+    handling_notes = models.TextField(blank=True, verbose_name='备注')
+    suggested_followup_date = models.DateField(null=True, blank=True, verbose_name='建议回访日期')
+    actual_followup_date = models.DateField(null=True, blank=True, verbose_name='实际回访日期')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    handled_at = models.DateTimeField(null=True, blank=True, verbose_name='处置时间')
     resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='解决时间')
 
     class Meta:
