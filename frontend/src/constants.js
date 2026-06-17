@@ -81,3 +81,75 @@ export const ALERT_STATUS_MAP = {
   followup: '待回访',
   resolved: '已解决',
 };
+
+export const SHOE_TYPE_MAP = {
+  pointe: '足尖鞋',
+  slipper: '训练软鞋',
+  sample: '样鞋',
+};
+
+export const SHOE_STATUS_MAP = {
+  available: '可借用',
+  borrowed: '已借出',
+  maintenance: '维护中',
+  reserved: '已预留',
+  retired: '已退役',
+  lost: '已丢失',
+};
+
+export const SHOE_HARDNESS_MAP = {
+  soft: '软',
+  medium: '中等',
+  hard: '硬',
+  extra_hard: '特硬',
+};
+
+export const BORROWING_PURPOSE_MAP = {
+  fitting: '试穿预约',
+  training: '训练借用',
+  performance: '演出借用',
+  rehearsal: '排练借用',
+  testing: '样鞋测试',
+  other: '其他',
+};
+
+export const BORROWING_STATUS_MAP = {
+  reserved: '已预约',
+  borrowed: '已借出',
+  returned: '已归还',
+  overdue: '已逾期',
+  cancelled: '已取消',
+};
+
+export const RETURN_CONDITION_MAP = {
+  excellent: '完好',
+  good: '良好',
+  fair: '一般',
+  poor: '破损',
+};
+
+export const ABNORMAL_TYPE_MAP = {
+  none: '无异常',
+  dirty: '污渍',
+  damaged: '破损',
+  worn: '严重磨损',
+  missing_part: '配件缺失',
+  wrong_size: '尺码错误',
+  other: '其他',
+};
+
+export const INVENTORY_ALERT_TYPE_MAP = {
+  overdue: '借用逾期',
+  abnormal_return: '归还异常',
+  low_stock: '库存不足',
+  high_borrow_count: '借用次数过高',
+  maintenance_due: '待维护',
+  lost: '已丢失',
+};
+
+export const INVENTORY_ALERT_STATUS_MAP = {
+  pending: '待处理',
+  acknowledged: '已确认',
+  resolved: '已解决',
+  dismissed: '已忽略',
+};

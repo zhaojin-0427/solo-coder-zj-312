@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile } from '../api';
-import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP } from '../constants';
+import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile, getStudentBorrowings } from '../api';
+import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP, BORROWING_PURPOSE_MAP, BORROWING_STATUS_MAP } from '../constants';
 
 export default function StudentProfiles() {
   const [students, setStudents] = useState([]);
@@ -8,9 +8,12 @@ export default function StudentProfiles() {
   const [totalPages, setTotalPages] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showBorrowingModal, setShowBorrowingModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileStudentId, setProfileStudentId] = useState(null);
+  const [borrowingHistory, setBorrowingHistory] = useState([]);
+  const [borrowingStudent, setBorrowingStudent] = useState(null);
   const [form, setForm] = useState({ name: '', level: 'beginner', age: '', phone: '' });
   const [profileForm, setProfileForm] = useState({
     foot_length: '', foot_width: '', arch_height: 'medium',
@@ -88,6 +91,18 @@ export default function StudentProfiles() {
     fetchData(page);
   };
 
+  const handleViewBorrowingHistory = async (student) => {
+    setBorrowingStudent(student);
+    try {
+      const res = await getStudentBorrowings(student.id);
+      const results = res.results || res;
+      setBorrowingHistory(Array.isArray(results) ? results : []);
+    } catch {
+      setBorrowingHistory([]);
+    }
+    setShowBorrowingModal(true);
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -126,6 +141,7 @@ export default function StudentProfiles() {
                 <td>
                   <div className="actions-cell">
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewProfile(s.id)}>足型</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleViewBorrowingHistory(s)}>借用</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleEdit(s)}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>删除</button>
                   </div>
@@ -242,6 +258,61 @@ export default function StudentProfiles() {
                 <button type="submit" className="btn btn-primary">保存足型档案</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showBorrowingModal && (
+        <div className="modal-overlay" onClick={() => setShowBorrowingModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 900 }}>
+            <h3>{borrowingStudent?.name} - 借用历史</h3>
+            {borrowingHistory.length > 0 ? (
+              <div className="card" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
+                <table>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f8f7ff' }}>
+                    <tr>
+                      <th>鞋款信息</th>
+                      <th>用途</th>
+                      <th>状态</th>
+                      <th>预约时间</th>
+                      <th>实际归还</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {borrowingHistory.map(b => (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{b.shoe?.brand} {b.shoe?.size}码</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>楦型: {b.shoe?.last_type || '-'} / 硬度: {b.shoe?.hardness || '-'}</div>
+                        </td>
+                        <td>{BORROWING_PURPOSE_MAP[b.purpose] || b.purpose}</td>
+                        <td>
+                          <span className={`badge ${
+                            b.status === 'returned' ? 'badge-success' :
+                            b.status === 'borrowed' ? 'badge-info' :
+                            b.status === 'overdue' ? 'badge-danger' :
+                            b.status === 'reserved' ? 'badge-warning' :
+                            'badge-secondary'
+                          }`}>
+                            {BORROWING_STATUS_MAP[b.status]}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: 12 }}>{b.expected_start_time?.slice(0, 16)}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>至 {b.expected_end_time?.slice(0, 16)}</div>
+                        </td>
+                        <td style={{ fontSize: 12 }}>{b.actual_return_time?.slice(0, 16) || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state"><p>暂无借用记录</p></div>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setShowBorrowingModal(false)}>关闭</button>
+            </div>
           </div>
         </div>
       )}

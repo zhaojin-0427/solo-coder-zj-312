@@ -3,11 +3,18 @@ from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Student, FootProfile, ShoeFitting, TrainingLog, WearAlert
+from .models import (
+    Student, FootProfile, ShoeFitting, TrainingLog, WearAlert,
+    PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert
+)
 from .serializers import (
     StudentSerializer, StudentWriteSerializer, FootProfileSerializer,
     ShoeFittingSerializer, TrainingLogSerializer, WearAlertSerializer,
     WearAlertHandleSerializer, WearAlertFollowupSerializer,
+    PointeShoeInventorySerializer, ShoeBorrowingSerializer,
+    ShoeBorrowingActionSerializer, ShoeReturnCheckSerializer,
+    InventoryAlertSerializer, InventoryAlertHandleSerializer,
+    InventoryStatisticsSerializer,
 )
 from .pagination import StandardPagination
 
@@ -304,4 +311,354 @@ class StatisticsViewSet(viewsets.ViewSet):
             'followup_pending_count': followup_pending_count,
             'avg_handle_hours': avg_handle_hours,
             'followup_rate': followup_rate,
+        })
+
+
+class PointeShoeInventoryViewSet(viewsets.ModelViewSet):
+    queryset = PointeShoeInventory.objects.all()
+    serializer_class = PointeShoeInventorySerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        brand = self.request.query_params.get('brand')
+        shoe_type = self.request.query_params.get('shoe_type')
+        status = self.request.query_params.get('status')
+        size = self.request.query_params.get('size')
+        classroom = self.request.query_params.get('classroom')
+        if brand:
+            qs = qs.filter(brand__icontains=brand)
+        if shoe_type:
+            qs = qs.filter(shoe_type=shoe_type)
+        if status:
+            qs = qs.filter(status=status)
+        if size:
+            qs = qs.filter(size__icontains=size)
+        if classroom:
+            qs = qs.filter(classroom__icontains=classroom)
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='available')
+    def available(self, request):
+        qs = self.get_queryset().filter(status='available')
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='low-stock')
+    def low_stock(self, request):
+        shoes = PointeShoeInventory.objects.exclude(status__in=['retired', 'lost'])
+        model_groups = {}
+        for shoe in shoes:
+            key = (shoe.brand, shoe.last_type, shoe.size, shoe.shoe_type)
+            if key not in model_groups:
+                model_groups[key] = []
+            model_groups[key].append(shoe)
+
+        low_stock_items = []
+        for key, group in model_groups.items():
+            safety_stock = group[0].safety_stock
+            if len(group) < safety_stock:
+                brand, last_type, size, shoe_type = key
+                low_stock_items.append({
+                    'brand': brand,
+                    'last_type': last_type,
+                    'size': size,
+                    'shoe_type': shoe_type,
+                    'shoe_type_display': dict(PointeShoeInventory.SHOE_TYPE_CHOICES)[shoe_type],
+                    'current_count': len(group),
+                    'safety_stock': safety_stock,
+                    'deficit': safety_stock - len(group),
+                })
+        return Response(low_stock_items)
+
+    @action(detail=True, methods=['post'], url_path='set-status')
+    def set_status(self, request, pk=None):
+        shoe = self.get_object()
+        new_status = request.data.get('status')
+        if new_status not in [s[0] for s in PointeShoeInventory.STATUS_CHOICES]:
+            return Response({'detail': '无效的状态'}, status=status.HTTP_400_BAD_REQUEST)
+        shoe.status = new_status
+        shoe.save()
+        return Response(self.get_serializer(shoe).data)
+
+
+class ShoeBorrowingViewSet(viewsets.ModelViewSet):
+    queryset = ShoeBorrowing.objects.all()
+    serializer_class = ShoeBorrowingSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        student_id = self.request.query_params.get('student')
+        shoe_id = self.request.query_params.get('shoe')
+        status = self.request.query_params.get('status')
+        purpose = self.request.query_params.get('purpose')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        if shoe_id:
+            qs = qs.filter(shoe_id=shoe_id)
+        if status:
+            qs = qs.filter(status=status)
+        if purpose:
+            qs = qs.filter(purpose=purpose)
+        if date_from:
+            qs = qs.filter(expected_start_time__gte=date_from)
+        if date_to:
+            qs = qs.filter(expected_end_time__lte=date_to)
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='check-conflict')
+    def check_conflict(self, request):
+        shoe_id = request.query_params.get('shoe')
+        start_time = request.query_params.get('start_time')
+        end_time = request.query_params.get('end_time')
+
+        if not all([shoe_id, start_time, end_time]):
+            return Response({'detail': '缺少必要参数'}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_conflict = ShoeBorrowing.check_time_conflict(shoe_id, start_time, end_time)
+        return Response({'has_conflict': has_conflict})
+
+    @action(detail=True, methods=['post'], url_path='borrow')
+    def borrow(self, request, pk=None):
+        borrowing = self.get_object()
+        if borrowing.status != 'reserved':
+            return Response({'detail': '只有已预约的借用单可以执行借出操作'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = ShoeBorrowingActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        borrowing.status = 'borrowed'
+        borrowing.actual_start_time = timezone.now()
+        borrowing.borrow_notes = serializer.validated_data.get('notes', '')
+        borrowing.save()
+
+        borrowing.shoe.status = 'borrowed'
+        borrowing.shoe.save()
+
+        return Response(self.get_serializer(borrowing).data)
+
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel(self, request, pk=None):
+        borrowing = self.get_object()
+        if borrowing.status not in ['reserved', 'overdue']:
+            return Response({'detail': '该借用单状态不允许取消'}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_active = ShoeBorrowing.objects.filter(
+            shoe=borrowing.shoe,
+            status__in=['reserved', 'borrowed']
+        ).exclude(id=borrowing.id).exists()
+
+        if not has_active:
+            borrowing.shoe.status = 'available'
+            borrowing.shoe.save()
+
+        borrowing.status = 'cancelled'
+        borrowing.save()
+
+        return Response(self.get_serializer(borrowing).data)
+
+    def perform_destroy(self, instance):
+        has_active = ShoeBorrowing.objects.filter(
+            shoe=instance.shoe,
+            status__in=['reserved', 'borrowed']
+        ).exclude(id=instance.id).exists()
+
+        if not has_active:
+            instance.shoe.status = 'available'
+            instance.shoe.save()
+
+        instance.delete()
+
+
+class ShoeReturnCheckViewSet(viewsets.ModelViewSet):
+    queryset = ShoeReturnCheck.objects.all()
+    serializer_class = ShoeReturnCheckSerializer
+    pagination_class = StandardPagination
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        student_id = self.request.query_params.get('student')
+        shoe_id = self.request.query_params.get('shoe')
+        abnormal = self.request.query_params.get('abnormal')
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        if shoe_id:
+            qs = qs.filter(shoe_id=shoe_id)
+        if abnormal == 'true':
+            qs = qs.exclude(abnormal_type='none')
+        return qs
+
+
+class InventoryAlertViewSet(viewsets.ModelViewSet):
+    queryset = InventoryAlert.objects.all()
+    serializer_class = InventoryAlertSerializer
+    pagination_class = StandardPagination
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        alert_type = self.request.query_params.get('alert_type')
+        status = self.request.query_params.get('status')
+        shoe_id = self.request.query_params.get('shoe')
+        student_id = self.request.query_params.get('student')
+
+        if alert_type:
+            qs = qs.filter(alert_type=alert_type)
+        if status:
+            qs = qs.filter(status=status)
+        if shoe_id:
+            qs = qs.filter(shoe_id=shoe_id)
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='acknowledge')
+    def acknowledge(self, request, pk=None):
+        alert = self.get_object()
+        if alert.status != 'pending':
+            return Response({'detail': '只有待处理的提醒可以确认'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = InventoryAlertHandleSerializer(alert, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        alert.status = 'acknowledged'
+        alert.acknowledged_at = timezone.now()
+        alert.save()
+
+        return Response(self.get_serializer(alert).data)
+
+    @action(detail=True, methods=['post'], url_path='resolve')
+    def resolve(self, request, pk=None):
+        alert = self.get_object()
+        if alert.status not in ['pending', 'acknowledged']:
+            return Response({'detail': '只有待处理或已确认的提醒可以解决'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = InventoryAlertHandleSerializer(alert, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        alert.status = 'resolved'
+        alert.resolved_at = timezone.now()
+        alert.save()
+
+        return Response(self.get_serializer(alert).data)
+
+    @action(detail=True, methods=['post'], url_path='dismiss')
+    def dismiss(self, request, pk=None):
+        alert = self.get_object()
+        alert.status = 'dismissed'
+        alert.resolved_at = timezone.now()
+        alert.save()
+        return Response(self.get_serializer(alert).data)
+
+    @action(detail=False, methods=['post'], url_path='generate-alerts')
+    def generate_alerts(self, request):
+        InventoryAlert.create_overdue_alerts()
+        InventoryAlert.create_low_stock_alerts()
+        return Response({'detail': '提醒生成完成'})
+
+
+class InventoryStatisticsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        InventoryAlert.create_overdue_alerts()
+        InventoryAlert.create_low_stock_alerts()
+
+        borrowings = ShoeBorrowing.objects.all()
+        total_borrowings = borrowings.count()
+        overdue_borrowings = borrowings.filter(status='overdue').count()
+        overdue_rate = round(overdue_borrowings / total_borrowings * 100, 1) if total_borrowings > 0 else 0
+
+        return_checks = ShoeReturnCheck.objects.all()
+        abnormal_returns = return_checks.exclude(abnormal_type='none')
+        abnormal_type_map = dict(ShoeReturnCheck.ABNORMAL_TYPE_CHOICES)
+        abnormal_distribution = (
+            abnormal_returns.values('abnormal_type')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        abnormal_return_distribution = [
+            {
+                'type': a['abnormal_type'],
+                'label': abnormal_type_map.get(a['abnormal_type'], a['abnormal_type']),
+                'count': a['count']
+            }
+            for a in abnormal_distribution
+        ]
+
+        size_borrowings = (
+            borrowings.values('shoe__size')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:20]
+        )
+        popular_sizes = [
+            {'size': s['shoe__size'], 'count': s['count']}
+            for s in size_borrowings if s['shoe__size']
+        ]
+
+        brand_turnover_data = (
+            borrowings.values('shoe__brand')
+            .annotate(
+                borrow_count=Count('id'),
+                unique_shoes=Count('shoe', distinct=True)
+            )
+            .order_by('-borrow_count')
+        )
+        brand_turnover = [
+            {
+                'brand': b['shoe__brand'],
+                'borrow_count': b['borrow_count'],
+                'unique_shoes': b['unique_shoes'],
+                'turnover_rate': round(b['borrow_count'] / b['unique_shoes'], 1) if b['unique_shoes'] > 0 else 0
+            }
+            for b in brand_turnover_data if b['shoe__brand']
+        ]
+
+        level_purpose_data = (
+            borrowings.values('student__level', 'purpose')
+            .annotate(count=Count('id'))
+            .order_by('student__level', '-count')
+        )
+        level_map = dict(Student.LEVEL_CHOICES)
+        purpose_map = dict(ShoeBorrowing.PURPOSE_CHOICES)
+        level_purpose_preferences = [
+            {
+                'level': lp['student__level'],
+                'level_label': level_map.get(lp['student__level'], lp['student__level']),
+                'purpose': lp['purpose'],
+                'purpose_label': purpose_map.get(lp['purpose'], lp['purpose']),
+                'count': lp['count']
+            }
+            for lp in level_purpose_data
+        ]
+
+        inventory = PointeShoeInventory.objects.exclude(status__in=['retired', 'lost'])
+        total_inventory = inventory.count()
+        available_inventory = inventory.filter(status='available').count()
+        borrowed_inventory = inventory.filter(status='borrowed').count()
+        maintenance_inventory = inventory.filter(status='maintenance').count()
+
+        pending_alerts = InventoryAlert.objects.filter(status='pending').count()
+
+        return Response({
+            'brand_turnover': brand_turnover,
+            'popular_sizes': popular_sizes,
+            'overdue_rate': overdue_rate,
+            'abnormal_return_distribution': abnormal_return_distribution,
+            'level_purpose_preferences': level_purpose_preferences,
+            'total_inventory': total_inventory,
+            'available_inventory': available_inventory,
+            'borrowed_inventory': borrowed_inventory,
+            'maintenance_inventory': maintenance_inventory,
+            'total_borrowings': total_borrowings,
+            'pending_alerts': pending_alerts,
         })

@@ -5,6 +5,11 @@ import ShoeFittings from './pages/ShoeFittings';
 import TrainingLogs from './pages/TrainingLogs';
 import WearAlerts from './pages/WearAlerts';
 import Statistics from './pages/Statistics';
+import ShoeInventory from './pages/ShoeInventory';
+import ShoeBorrowings from './pages/ShoeBorrowings';
+import ReturnChecks from './pages/ReturnChecks';
+import InventoryAlerts from './pages/InventoryAlerts';
+import InventoryStatistics from './pages/InventoryStatistics';
 import './App.css';
 
 const navItems = [
@@ -12,7 +17,12 @@ const navItems = [
   { path: '/fittings', label: '试鞋记录' },
   { path: '/training', label: '训练日志' },
   { path: '/alerts', label: '磨损预警' },
+  { path: '/inventory', label: '鞋款库存' },
+  { path: '/borrowings', label: '借用排班' },
+  { path: '/returns', label: '归还检查' },
+  { path: '/inventory-alerts', label: '库存提醒' },
   { path: '/statistics', label: '统计分析' },
+  { path: '/inventory-statistics', label: '库存统计' },
 ];
 
 export default function App() {
@@ -41,7 +51,12 @@ export default function App() {
           <Route path="/fittings" element={<ShoeFittings />} />
           <Route path="/training" element={<TrainingLogs />} />
           <Route path="/alerts" element={<WearAlerts />} />
+          <Route path="/inventory" element={<ShoeInventory />} />
+          <Route path="/borrowings" element={<ShoeBorrowings />} />
+          <Route path="/returns" element={<ReturnChecks />} />
+          <Route path="/inventory-alerts" element={<InventoryAlerts />} />
           <Route path="/statistics" element={<Statistics />} />
+          <Route path="/inventory-statistics" element={<InventoryStatistics />} />
           <Route path="*" element={<Navigate to="/profiles" replace />} />
         </Routes>
       </main>
