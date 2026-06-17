@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getTrainingLogs, createTrainingLog, updateTrainingLog, deleteTrainingLog, getStudents, getShoeFittings } from '../api';
-import { STABILITY_MAP, SOFTENING_MAP, PAIN_LOCATION_MAP } from '../constants';
+import { getTrainingLogs, createTrainingLog, updateTrainingLog, deleteTrainingLog, getStudents, getShoeFittings, getInjuryInterventions } from '../api';
+import { STABILITY_MAP, SOFTENING_MAP, PAIN_LOCATION_MAP, INTERVENTION_STATUS_MAP, INTERVENTION_PAIN_LOCATION_MAP } from '../constants';
 
 const defaultForm = {
   student: '', shoe_fitting: '', date: '', duration_minutes: '',
@@ -17,6 +17,9 @@ export default function TrainingLogs() {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState(defaultForm);
+  const [showInterventionModal, setShowInterventionModal] = useState(false);
+  const [logInterventions, setLogInterventions] = useState([]);
+  const [interventionStudentName, setInterventionStudentName] = useState('');
 
   const filteredFittings = form.student
     ? fittings.filter(f => String(f.student) === form.student || f.student === Number(form.student))
@@ -84,6 +87,23 @@ export default function TrainingLogs() {
     }
   };
 
+  const handleViewLogInterventions = async (log) => {
+    setInterventionStudentName(log.student_name || '');
+    try {
+      const res = await getInjuryInterventions({ student: log.student?.id || log.student, page_size: 100 });
+      const results = res.results || res;
+      setLogInterventions(Array.isArray(results) ? results : []);
+    } catch {
+      setLogInterventions([]);
+    }
+    setShowInterventionModal(true);
+  };
+
+  const interventionStatusBadge = (s) => {
+    const map = { active: 'badge-danger', paused: 'badge-warning', closed: 'badge-success' };
+    return map[s] || 'badge-info';
+  };
+
   const stabilityBadge = (s) => {
     const map = { excellent: 'badge-success', good: 'badge-info', fair: 'badge-warning', poor: 'badge-danger' };
     return map[s] || 'badge-info';
@@ -140,6 +160,7 @@ export default function TrainingLogs() {
                 <td><span className={`badge ${softeningBadge(l.sole_softening)}`}>{SOFTENING_MAP[l.sole_softening]}</span></td>
                 <td>
                   <div className="actions-cell">
+                    <button className="btn btn-outline btn-sm" onClick={() => handleViewLogInterventions(l)}>干预</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleEdit(l)}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(l.id)}>删除</button>
                   </div>
@@ -216,6 +237,43 @@ export default function TrainingLogs() {
                 <button type="submit" className="btn btn-primary">保存</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showInterventionModal && (
+        <div className="modal-overlay" onClick={() => setShowInterventionModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3>{interventionStudentName} - 伤病干预记录</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>疼痛部位</th>
+                  <th>疼痛等级</th>
+                  <th>触发来源</th>
+                  <th>干预措施</th>
+                  <th>状态</th>
+                  <th>复查日期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logInterventions.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>暂无干预记录</td></tr>
+                ) : logInterventions.map(iv => (
+                  <tr key={iv.id}>
+                    <td>{INTERVENTION_PAIN_LOCATION_MAP[iv.pain_location] || iv.pain_location}</td>
+                    <td>{iv.pain_level}/10</td>
+                    <td>{iv.trigger_source}</td>
+                    <td>{iv.intervention_measures}</td>
+                    <td><span className={`badge ${interventionStatusBadge(iv.status)}`}>{INTERVENTION_STATUS_MAP[iv.status] || iv.status}</span></td>
+                    <td>{iv.review_date || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setShowInterventionModal(false)}>关闭</button>
+            </div>
           </div>
         </div>
       )}

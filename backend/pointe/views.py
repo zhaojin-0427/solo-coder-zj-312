@@ -6,7 +6,8 @@ from rest_framework.response import Response
 from .models import (
     Student, FootProfile, ShoeFitting, TrainingLog, WearAlert,
     PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert,
-    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation
+    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation,
+    InjuryIntervention, RehabilitationReview, InterventionReminder
 )
 from .serializers import (
     StudentSerializer, StudentWriteSerializer, FootProfileSerializer,
@@ -18,6 +19,10 @@ from .serializers import (
     InventoryStatisticsSerializer,
     TrainingPlanSerializer, WeeklyExecutionRecordSerializer,
     WeeklyExecutionRecordSubmitSerializer, PhaseEvaluationSerializer,
+    InjuryInterventionSerializer, InjuryInterventionWriteSerializer,
+    RehabilitationReviewSerializer, RehabilitationReviewNestedSerializer,
+    InterventionReminderSerializer, InterventionReminderHandleSerializer,
+    RehabilitationStatisticsSerializer,
 )
 from .pagination import StandardPagination
 
@@ -884,4 +889,248 @@ class PlanStatisticsViewSet(viewsets.ViewSet):
             'active_plans': active_plans.count(),
             'completed_plans': completed_plans.count(),
             'risk_plans': active_plans.filter(risk_level__in=['low', 'medium', 'high']).count(),
+        })
+
+
+class InjuryInterventionViewSet(viewsets.ModelViewSet):
+    queryset = InjuryIntervention.objects.all()
+    serializer_class = InjuryInterventionSerializer
+    pagination_class = StandardPagination
+
+    def get_serializer_class(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return InjuryInterventionWriteSerializer
+        return InjuryInterventionSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('student', 'related_wear_alert', 'related_training_plan')
+        student_id = self.request.query_params.get('student')
+        status_filter = self.request.query_params.get('status')
+        pain_location = self.request.query_params.get('pain_location')
+        trigger_source = self.request.query_params.get('trigger_source')
+        teacher = self.request.query_params.get('teacher')
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if pain_location:
+            qs = qs.filter(pain_location=pain_location)
+        if trigger_source:
+            qs = qs.filter(trigger_source=trigger_source)
+        if teacher:
+            qs = qs.filter(responsible_teacher__icontains=teacher)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='pause')
+    def pause_intervention(self, request, pk=None):
+        iv = self.get_object()
+        if iv.status != 'active':
+            return Response({'detail': '只有干预中的干预单可以暂停'}, status=status.HTTP_400_BAD_REQUEST)
+        iv.status = 'paused'
+        iv.save()
+        return Response(InjuryInterventionSerializer(iv).data)
+
+    @action(detail=True, methods=['post'], url_path='resume')
+    def resume_intervention(self, request, pk=None):
+        iv = self.get_object()
+        if iv.status != 'paused':
+            return Response({'detail': '只有暂停观察的干预单可以恢复'}, status=status.HTTP_400_BAD_REQUEST)
+        iv.status = 'active'
+        iv.save()
+        return Response(InjuryInterventionSerializer(iv).data)
+
+    @action(detail=True, methods=['post'], url_path='close')
+    def close_intervention(self, request, pk=None):
+        iv = self.get_object()
+        if iv.status == 'closed':
+            return Response({'detail': '该干预单已关闭'}, status=status.HTTP_400_BAD_REQUEST)
+        iv.status = 'closed'
+        iv.closed_at = timezone.now()
+        iv.save()
+        return Response(InjuryInterventionSerializer(iv).data)
+
+    @action(detail=True, methods=['get'], url_path='reviews')
+    def list_reviews(self, request, pk=None):
+        iv = self.get_object()
+        reviews = iv.reviews.all()
+        serializer = RehabilitationReviewNestedSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+
+class RehabilitationReviewViewSet(viewsets.ModelViewSet):
+    queryset = RehabilitationReview.objects.all()
+    serializer_class = RehabilitationReviewSerializer
+    pagination_class = StandardPagination
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('intervention', 'intervention__student')
+        intervention_id = self.request.query_params.get('intervention')
+        student_id = self.request.query_params.get('student')
+        if intervention_id:
+            qs = qs.filter(intervention_id=intervention_id)
+        if student_id:
+            qs = qs.filter(intervention__student_id=student_id)
+        return qs
+
+
+class InterventionReminderViewSet(viewsets.ModelViewSet):
+    queryset = InterventionReminder.objects.all()
+    serializer_class = InterventionReminderSerializer
+    pagination_class = StandardPagination
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('intervention', 'intervention__student', 'student')
+        reminder_type = self.request.query_params.get('reminder_type')
+        status_filter = self.request.query_params.get('status')
+        student_id = self.request.query_params.get('student')
+        if reminder_type:
+            qs = qs.filter(reminder_type=reminder_type)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='acknowledge')
+    def acknowledge(self, request, pk=None):
+        reminder = self.get_object()
+        if reminder.status != 'pending':
+            return Response({'detail': '只有待处理的提醒可以确认'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = InterventionReminderHandleSerializer(reminder, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        reminder.status = 'acknowledged'
+        reminder.acknowledged_at = timezone.now()
+        reminder.save()
+        return Response(InterventionReminderSerializer(reminder).data)
+
+    @action(detail=True, methods=['post'], url_path='resolve')
+    def resolve(self, request, pk=None):
+        reminder = self.get_object()
+        if reminder.status not in ['pending', 'acknowledged']:
+            return Response({'detail': '只有待处理或已确认的提醒可以解决'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = InterventionReminderHandleSerializer(reminder, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        reminder.status = 'resolved'
+        reminder.resolved_at = timezone.now()
+        reminder.save()
+        return Response(InterventionReminderSerializer(reminder).data)
+
+    @action(detail=True, methods=['post'], url_path='dismiss')
+    def dismiss(self, request, pk=None):
+        reminder = self.get_object()
+        reminder.status = 'dismissed'
+        reminder.resolved_at = timezone.now()
+        reminder.save()
+        return Response(InterventionReminderSerializer(reminder).data)
+
+    @action(detail=False, methods=['post'], url_path='generate-reminders')
+    def generate_reminders(self, request):
+        InterventionReminder.generate_reminders()
+        return Response({'detail': '干预提醒生成完成'})
+
+
+class RehabilitationStatisticsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        InterventionReminder.generate_reminders()
+
+        interventions = InjuryIntervention.objects.all()
+        total_interventions = interventions.count()
+        active_interventions = interventions.filter(status='active').count()
+        closed_interventions = interventions.filter(status='closed').count()
+        total_reviews = RehabilitationReview.objects.count()
+        total_reminders = InterventionReminder.objects.count()
+        pending_reminders = InterventionReminder.objects.filter(status='pending').count()
+
+        pain_location_map = dict(InjuryIntervention.PAIN_LOCATION_CHOICES)
+        pain_location_distribution = list(
+            interventions.values('pain_location')
+            .annotate(count=Count('id'), avg_pain=Avg('pain_level'))
+            .order_by('-count')
+        )
+        pain_location_distribution = [
+            {
+                'location': p['pain_location'],
+                'label': pain_location_map.get(p['pain_location'], p['pain_location']),
+                'count': p['count'],
+                'avg_pain': round(p['avg_pain'], 1) if p['avg_pain'] else 0,
+            }
+            for p in pain_location_distribution
+        ]
+
+        level_map = dict(Student.LEVEL_CHOICES)
+        level_intervention_data = list(
+            interventions.values('student__level')
+            .annotate(count=Count('id'))
+            .order_by('student__level')
+        )
+        level_intervention_count = [
+            {
+                'level': l['student__level'],
+                'level_label': level_map.get(l['student__level'], l['student__level']),
+                'count': l['count'],
+            }
+            for l in level_intervention_data
+        ]
+
+        closed_with_dates = interventions.filter(
+            status='closed', closed_at__isnull=False, created_at__isnull=False
+        )
+        recovery_days = []
+        for iv in closed_with_dates:
+            days = (iv.closed_at.date() - iv.created_at.date()).days
+            if days >= 0:
+                recovery_days.append(days)
+        avg_recovery_days = round(sum(recovery_days) / len(recovery_days), 1) if recovery_days else 0
+
+        overdue_interventions = interventions.filter(status='active')
+        overdue_count = 0
+        active_count = 0
+        today = timezone.now().date()
+        for iv in overdue_interventions:
+            if iv.next_review_date and today > iv.next_review_date:
+                overdue_count += 1
+            active_count += 1
+        review_overdue_rate = round(overdue_count / active_count * 100, 1) if active_count > 0 else 0
+
+        measures_effectiveness = list(
+            interventions.values('intervention_measures')
+            .annotate(
+                count=Count('id'),
+                avg_initial_pain=Avg('pain_level'),
+            )
+            .order_by('-count')[:10]
+        )
+        measure_stats = []
+        for m in measures_effectiveness:
+            related_reviews = RehabilitationReview.objects.filter(
+                intervention__intervention_measures=m['intervention_measures']
+            )
+            avg_review_pain = related_reviews.aggregate(avg=Avg('pain_level'))['avg']
+            improved_count = related_reviews.filter(pain_change='improved').count()
+            total_review_count = related_reviews.count()
+            measure_stats.append({
+                'measure': m['intervention_measures'][:60] if m['intervention_measures'] else '',
+                'count': m['count'],
+                'avg_initial_pain': round(m['avg_initial_pain'], 1) if m['avg_initial_pain'] else 0,
+                'avg_review_pain': round(avg_review_pain, 1) if avg_review_pain else 0,
+                'improvement_rate': round(improved_count / total_review_count * 100, 1) if total_review_count > 0 else 0,
+            })
+        intervention_measure_effectiveness = measure_stats
+
+        return Response({
+            'pain_location_distribution': pain_location_distribution,
+            'level_intervention_count': level_intervention_count,
+            'avg_recovery_days': avg_recovery_days,
+            'review_overdue_rate': review_overdue_rate,
+            'intervention_measure_effectiveness': intervention_measure_effectiveness,
+            'total_interventions': total_interventions,
+            'active_interventions': active_interventions,
+            'closed_interventions': closed_interventions,
+            'total_reviews': total_reviews,
+            'total_reminders': total_reminders,
+            'pending_reminders': pending_reminders,
         })

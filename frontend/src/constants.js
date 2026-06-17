@@ -205,3 +205,55 @@ export const PROGRESS_SUGGESTION_MAP = {
   adjust: '调整计划后继续',
   regress: '建议降级',
 };
+
+export const INTERVENTION_TRIGGER_MAP = {
+  pain: '训练疼痛',
+  wear_alert: '磨损预警',
+  plan_risk: '计划风险',
+  teacher_observation: '教师观察',
+  student_report: '学员反馈',
+  followup_review: '复查发现',
+};
+
+export const INTERVENTION_PAIN_LOCATION_MAP = {
+  toe: '脚趾',
+  ball: '前脚掌',
+  arch: '足弓',
+  heel: '脚跟',
+  ankle: '脚踝',
+  instep: '脚背',
+  multiple: '多部位',
+};
+
+export const INTERVENTION_STATUS_MAP = {
+  active: '干预中',
+  paused: '暂停观察',
+  closed: '已关闭',
+};
+
+export const PAIN_CHANGE_MAP = {
+  improved: '疼痛减轻',
+  stable: '疼痛稳定',
+  worsened: '疼痛加重',
+};
+
+export const STABILITY_RECOVERY_MAP = {
+  excellent: '恢复良好',
+  good: '有所恢复',
+  fair: '恢复一般',
+  poor: '无明显恢复',
+};
+
+export const REMINDER_TYPE_MAP = {
+  continuous_pain: '连续高疼痛',
+  review_overdue: '复查逾期',
+  pain_recurrence: '恢复上鞋后再疼痛',
+  high_pain_level: '高疼痛等级',
+};
+
+export const REMINDER_STATUS_MAP = {
+  pending: '待处理',
+  acknowledged: '已确认',
+  resolved: '已解决',
+  dismissed: '已忽略',
+};

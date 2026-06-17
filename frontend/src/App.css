@@ -407,3 +407,23 @@ table tr:hover { background: #faf8ff; }
   color: var(--primary);
   border-bottom-color: var(--primary);
 }
+
+.intervention-active { border-left: 4px solid var(--danger); }
+.intervention-paused { border-left: 4px solid var(--warning); }
+.intervention-closed { border-left: 4px solid var(--success); }
+
+.nav-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.nav-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.nav-scroll::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 2px;
+}

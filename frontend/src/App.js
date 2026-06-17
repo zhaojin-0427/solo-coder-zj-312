@@ -15,6 +15,10 @@ import WeeklyExecutionRecords from './pages/WeeklyExecutionRecords';
 import PhaseEvaluations from './pages/PhaseEvaluations';
 import PlanRiskAlerts from './pages/PlanRiskAlerts';
 import PlanStatistics from './pages/PlanStatistics';
+import InjuryInterventions from './pages/InjuryInterventions';
+import RehabilitationReviews from './pages/RehabilitationReviews';
+import InterventionReminders from './pages/InterventionReminders';
+import RehabilitationStatistics from './pages/RehabilitationStatistics';
 import './App.css';
 
 const navItems = [
@@ -26,6 +30,9 @@ const navItems = [
   { path: '/weekly-records', label: '周执行记录' },
   { path: '/phase-evaluations', label: '阶段评估' },
   { path: '/plan-risk-alerts', label: '计划风险提醒' },
+  { path: '/injury-interventions', label: '伤痛干预' },
+  { path: '/rehabilitation-reviews', label: '康复复查' },
+  { path: '/intervention-reminders', label: '干预提醒' },
   { path: '/inventory', label: '鞋款库存' },
   { path: '/borrowings', label: '借用排班' },
   { path: '/returns', label: '归还检查' },
@@ -33,6 +40,7 @@ const navItems = [
   { path: '/statistics', label: '统计分析' },
   { path: '/plan-statistics', label: '计划统计' },
   { path: '/inventory-statistics', label: '库存统计' },
+  { path: '/rehabilitation-statistics', label: '康复统计' },
 ];
 
 export default function App() {
@@ -44,7 +52,7 @@ export default function App() {
           <h1>芭蕾足尖鞋适配与训练磨损追踪系统</h1>
         </div>
       </header>
-      <nav className="app-nav">
+      <nav className="app-nav nav-scroll">
         {navItems.map(item => (
           <NavLink
             key={item.path}
@@ -72,6 +80,10 @@ export default function App() {
           <Route path="/phase-evaluations" element={<PhaseEvaluations />} />
           <Route path="/plan-risk-alerts" element={<PlanRiskAlerts />} />
           <Route path="/plan-statistics" element={<PlanStatistics />} />
+          <Route path="/injury-interventions" element={<InjuryInterventions />} />
+          <Route path="/rehabilitation-reviews" element={<RehabilitationReviews />} />
+          <Route path="/intervention-reminders" element={<InterventionReminders />} />
+          <Route path="/rehabilitation-statistics" element={<RehabilitationStatistics />} />
           <Route path="*" element={<Navigate to="/profiles" replace />} />
         </Routes>
       </main>

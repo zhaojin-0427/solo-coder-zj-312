@@ -605,6 +605,207 @@ class PhaseEvaluation(models.Model):
         return f'{self.training_plan.plan_name} - {self.phase_name}'
 
 
+class InjuryIntervention(models.Model):
+    TRIGGER_SOURCE_CHOICES = [
+        ('pain', '训练疼痛'),
+        ('wear_alert', '磨损预警'),
+        ('plan_risk', '计划风险'),
+        ('teacher_observation', '教师观察'),
+        ('student_report', '学员反馈'),
+        ('followup_review', '复查发现'),
+    ]
+    PAIN_LOCATION_CHOICES = [
+        ('toe', '脚趾'),
+        ('ball', '前脚掌'),
+        ('arch', '足弓'),
+        ('heel', '脚跟'),
+        ('ankle', '脚踝'),
+        ('instep', '脚背'),
+        ('multiple', '多部位'),
+    ]
+    STATUS_CHOICES = [
+        ('active', '干预中'),
+        ('paused', '暂停观察'),
+        ('closed', '已关闭'),
+    ]
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='injury_interventions', verbose_name='学员')
+    trigger_source = models.CharField(max_length=20, choices=TRIGGER_SOURCE_CHOICES, verbose_name='触发来源')
+    pain_location = models.CharField(max_length=20, choices=PAIN_LOCATION_CHOICES, verbose_name='疼痛部位')
+    pain_level = models.IntegerField(verbose_name='疼痛等级(0-10)')
+    suspected_cause = models.TextField(blank=True, verbose_name='疑似原因')
+    intervention_measures = models.TextField(verbose_name='干预措施')
+    suspend_days = models.IntegerField(default=0, verbose_name='暂停上鞋天数')
+    rehab_training = models.TextField(blank=True, verbose_name='康复训练内容')
+    responsible_teacher = models.CharField(max_length=100, verbose_name='负责教师')
+    next_review_date = models.DateField(verbose_name='复查日期')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active', verbose_name='状态')
+    related_wear_alert = models.ForeignKey(WearAlert, on_delete=models.SET_NULL, null=True, blank=True, related_name='interventions', verbose_name='关联磨损预警')
+    related_training_plan = models.ForeignKey(TrainingPlan, on_delete=models.SET_NULL, null=True, blank=True, related_name='interventions', verbose_name='关联训练计划')
+    notes = models.TextField(blank=True, verbose_name='备注')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    closed_at = models.DateTimeField(null=True, blank=True, verbose_name='关闭时间')
+
+    class Meta:
+        verbose_name = '伤痛干预单'
+        verbose_name_plural = '伤痛干预单'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.student.name} - {self.get_pain_location_display()} 干预单'
+
+    @property
+    def is_review_overdue(self):
+        if self.status != 'active':
+            return False
+        return timezone.now().date() > self.next_review_date
+
+    @property
+    def latest_review(self):
+        return self.reviews.order_by('-review_date').first()
+
+    @classmethod
+    def check_duplicate_open(cls, student_id, pain_location, exclude_id=None):
+        qs = cls.objects.filter(student_id=student_id, pain_location=pain_location, status__in=['active', 'paused'])
+        if exclude_id:
+            qs = qs.exclude(id=exclude_id)
+        return qs.exists()
+
+
+class RehabilitationReview(models.Model):
+    PAIN_CHANGE_CHOICES = [
+        ('improved', '疼痛减轻'),
+        ('stable', '疼痛稳定'),
+        ('worsened', '疼痛加重'),
+    ]
+    STABILITY_RECOVERY_CHOICES = [
+        ('excellent', '恢复良好'),
+        ('good', '有所恢复'),
+        ('fair', '恢复一般'),
+        ('poor', '无明显恢复'),
+    ]
+
+    intervention = models.ForeignKey(InjuryIntervention, on_delete=models.CASCADE, related_name='reviews', verbose_name='干预单')
+    review_date = models.DateField(verbose_name='复查日期')
+    pain_level = models.IntegerField(verbose_name='当前疼痛等级(0-10)')
+    pain_change = models.CharField(max_length=10, choices=PAIN_CHANGE_CHOICES, verbose_name='疼痛变化')
+    stability_recovery = models.CharField(max_length=10, choices=STABILITY_RECOVERY_CHOICES, verbose_name='稳定度恢复情况')
+    allow_resume_pointe = models.BooleanField(default=False, verbose_name='是否允许恢复上鞋')
+    need_refit = models.BooleanField(default=False, verbose_name='是否需要重新试鞋')
+    need_insole_adjust = models.BooleanField(default=False, verbose_name='是否需要调整鞋垫')
+    review_notes = models.TextField(blank=True, verbose_name='复查备注')
+    reviewer = models.CharField(max_length=100, verbose_name='复查人')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        verbose_name = '康复复查'
+        verbose_name_plural = '康复复查'
+        ordering = ['-review_date']
+
+    def __str__(self):
+        return f'{self.intervention.student.name} 复查 - {self.review_date}'
+
+
+class InterventionReminder(models.Model):
+    REMINDER_TYPE_CHOICES = [
+        ('continuous_pain', '连续高疼痛'),
+        ('review_overdue', '复查逾期'),
+        ('pain_recurrence', '恢复上鞋后再疼痛'),
+        ('high_pain_level', '高疼痛等级'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', '待处理'),
+        ('acknowledged', '已确认'),
+        ('resolved', '已解决'),
+        ('dismissed', '已忽略'),
+    ]
+
+    intervention = models.ForeignKey(InjuryIntervention, on_delete=models.CASCADE, related_name='reminders', verbose_name='关联干预单')
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='intervention_reminders', verbose_name='学员')
+    reminder_type = models.CharField(max_length=20, choices=REMINDER_TYPE_CHOICES, verbose_name='提醒类型')
+    message = models.TextField(verbose_name='提醒内容')
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending', verbose_name='状态')
+    handled_by = models.CharField(max_length=100, blank=True, verbose_name='处理人')
+    handling_notes = models.TextField(blank=True, verbose_name='处理备注')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    acknowledged_at = models.DateTimeField(null=True, blank=True, verbose_name='确认时间')
+    resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='解决时间')
+
+    class Meta:
+        verbose_name = '干预风险提醒'
+        verbose_name_plural = '干预风险提醒'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.student.name} - {self.get_reminder_type_display()}'
+
+    @classmethod
+    def generate_reminders(cls):
+        today = timezone.now().date()
+
+        active_interventions = InjuryIntervention.objects.filter(status='active')
+        for iv in active_interventions:
+            if iv.next_review_date and today > iv.next_review_date:
+                cls.objects.get_or_create(
+                    intervention=iv,
+                    student=iv.student,
+                    reminder_type='review_overdue',
+                    status='pending',
+                    defaults={
+                        'message': f'学员{iv.student.name}的{iv.get_pain_location_display()}干预单已超过复查日期({iv.next_review_date})，请尽快安排复查'
+                    }
+                )
+
+            if iv.pain_level >= 7:
+                recent_reviews = iv.reviews.order_by('-review_date')[:3]
+                high_pain_count = sum(1 for r in recent_reviews if r.pain_level >= 7)
+                if high_pain_count >= 2:
+                    cls.objects.get_or_create(
+                        intervention=iv,
+                        student=iv.student,
+                        reminder_type='continuous_pain',
+                        status='pending',
+                        defaults={
+                            'message': f'学员{iv.student.name}的{iv.get_pain_location_display()}连续{high_pain_count}次复查疼痛等级≥7，建议升级干预措施'
+                        }
+                    )
+
+            if iv.pain_level >= 8:
+                cls.objects.get_or_create(
+                    intervention=iv,
+                    student=iv.student,
+                    reminder_type='high_pain_level',
+                    status='pending',
+                    defaults={
+                        'message': f'学员{iv.student.name}的{iv.get_pain_location_display()}疼痛等级达{iv.pain_level}/10，需立即关注'
+                    }
+                )
+
+        closed_with_resume = InjuryIntervention.objects.filter(status='closed')
+        for iv in closed_with_resume:
+            last_review = iv.reviews.order_by('-review_date').first()
+            if last_review and last_review.allow_resume_pointe:
+                recent_logs = TrainingLog.objects.filter(
+                    student=iv.student,
+                    pain_location=iv.pain_location,
+                    pain_level__gte=5,
+                    date__gte=last_review.review_date
+                )
+                if recent_logs.exists():
+                    cls.objects.get_or_create(
+                        intervention=iv,
+                        student=iv.student,
+                        reminder_type='pain_recurrence',
+                        status='pending',
+                        defaults={
+                            'message': f'学员{iv.student.name}恢复上鞋后在{iv.get_pain_location_display()}再次出现疼痛(等级≥5)，建议重新评估'
+                        }
+                    )
+
+        InventoryAlert.create_low_stock_alerts()
+
+
 class InventoryAlert(models.Model):
     ALERT_TYPE_CHOICES = [
         ('overdue', '借用逾期'),

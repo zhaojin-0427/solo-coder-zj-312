@@ -5,7 +5,9 @@ from .views import (
     PointeShoeInventoryViewSet, ShoeBorrowingViewSet, ShoeReturnCheckViewSet,
     InventoryAlertViewSet, InventoryStatisticsViewSet,
     TrainingPlanViewSet, WeeklyExecutionRecordViewSet, PhaseEvaluationViewSet,
-    PlanRiskAlertViewSet, PlanStatisticsViewSet
+    PlanRiskAlertViewSet, PlanStatisticsViewSet,
+    InjuryInterventionViewSet, RehabilitationReviewViewSet,
+    InterventionReminderViewSet, RehabilitationStatisticsViewSet
 )
 
 router = DefaultRouter()
@@ -24,6 +26,10 @@ router.register(r'weekly-records', WeeklyExecutionRecordViewSet)
 router.register(r'phase-evaluations', PhaseEvaluationViewSet)
 router.register(r'plan-risk-alerts', PlanRiskAlertViewSet, basename='plan-risk-alerts')
 router.register(r'plan-statistics', PlanStatisticsViewSet, basename='plan-statistics')
+router.register(r'injury-interventions', InjuryInterventionViewSet)
+router.register(r'rehabilitation-reviews', RehabilitationReviewViewSet)
+router.register(r'intervention-reminders', InterventionReminderViewSet)
+router.register(r'rehabilitation-statistics', RehabilitationStatisticsViewSet, basename='rehabilitation-statistics')
 
 urlpatterns = [
     path('api/', include(router.urls)),

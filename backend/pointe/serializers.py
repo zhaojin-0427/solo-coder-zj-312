@@ -4,7 +4,8 @@ from django.utils import timezone
 from .models import (
     Student, FootProfile, ShoeFitting, TrainingLog, WearAlert,
     PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert,
-    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation
+    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation,
+    InjuryIntervention, RehabilitationReview, InterventionReminder
 )
 
 
@@ -418,3 +419,196 @@ class PlanStatisticsSerializer(serializers.Serializer):
     common_adjustment_reasons = serializers.ListField()
     target_achievement_rate = serializers.ListField()
     teacher_followup = serializers.ListField()
+
+
+class RehabilitationReviewNestedSerializer(serializers.ModelSerializer):
+    pain_change_display = serializers.CharField(source='get_pain_change_display', read_only=True)
+    stability_recovery_display = serializers.CharField(source='get_stability_recovery_display', read_only=True)
+
+    class Meta:
+        model = RehabilitationReview
+        fields = ['id', 'review_date', 'pain_level', 'pain_change', 'pain_change_display',
+                   'stability_recovery', 'stability_recovery_display',
+                   'allow_resume_pointe', 'need_refit', 'need_insole_adjust',
+                   'review_notes', 'reviewer', 'created_at']
+
+
+class InjuryInterventionSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='student.name', read_only=True)
+    student_level = serializers.CharField(source='student.level', read_only=True)
+    trigger_source_display = serializers.CharField(source='get_trigger_source_display', read_only=True)
+    pain_location_display = serializers.CharField(source='get_pain_location_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    is_review_overdue = serializers.BooleanField(read_only=True)
+    latest_review = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InjuryIntervention
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'closed_at']
+
+    def get_latest_review(self, obj):
+        latest = obj.reviews.order_by('-review_date').first()
+        if latest:
+            return RehabilitationReviewNestedSerializer(latest).data
+        return None
+
+    def get_review_count(self, obj):
+        return obj.reviews.count()
+
+    def validate(self, data):
+        if data.get('pain_level') is not None:
+            if data['pain_level'] < 0 or data['pain_level'] > 10:
+                raise ValidationError('疼痛等级范围为0-10')
+
+        student = data.get('student')
+        pain_location = data.get('pain_location')
+        if student and pain_location:
+            exclude_id = self.instance.id if self.instance else None
+            if InjuryIntervention.check_duplicate_open(student.id, pain_location, exclude_id):
+                raise ValidationError(f'该学员在【{dict(InjuryIntervention.PAIN_LOCATION_CHOICES).get(pain_location, pain_location)}】部位已存在未关闭的干预单')
+
+        return data
+
+
+class InjuryInterventionWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InjuryIntervention
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'closed_at']
+
+    def validate(self, data):
+        if data.get('pain_level') is not None:
+            if data['pain_level'] < 0 or data['pain_level'] > 10:
+                raise ValidationError('疼痛等级范围为0-10')
+
+        student = data.get('student')
+        pain_location = data.get('pain_location')
+        if student and pain_location:
+            exclude_id = self.instance.id if self.instance else None
+            if InjuryIntervention.check_duplicate_open(student.id, pain_location, exclude_id):
+                raise ValidationError(f'该学员在【{dict(InjuryIntervention.PAIN_LOCATION_CHOICES).get(pain_location, pain_location)}】部位已存在未关闭的干预单')
+
+        return data
+
+
+class RehabilitationReviewSerializer(serializers.ModelSerializer):
+    intervention_info = serializers.SerializerMethodField()
+    student_name = serializers.CharField(source='intervention.student.name', read_only=True)
+    pain_change_display = serializers.CharField(source='get_pain_change_display', read_only=True)
+    stability_recovery_display = serializers.CharField(source='get_stability_recovery_display', read_only=True)
+
+    class Meta:
+        model = RehabilitationReview
+        fields = '__all__'
+        read_only_fields = ['created_at']
+
+    def get_intervention_info(self, obj):
+        return {
+            'id': obj.intervention.id,
+            'student_name': obj.intervention.student.name,
+            'pain_location': obj.intervention.pain_location,
+            'pain_location_display': obj.intervention.get_pain_location_display(),
+            'status': obj.intervention.status,
+        }
+
+    def validate(self, data):
+        if data.get('pain_level') is not None:
+            if data['pain_level'] < 0 or data['pain_level'] > 10:
+                raise ValidationError('疼痛等级范围为0-10')
+        return data
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        intervention = instance.intervention
+
+        intervention.pain_level = instance.pain_level
+        if instance.pain_change == 'worsened':
+            if intervention.status == 'paused':
+                intervention.status = 'active'
+        elif instance.pain_change == 'improved' and instance.pain_level <= 3:
+            if instance.allow_resume_pointe:
+                intervention.status = 'closed'
+                intervention.closed_at = timezone.now()
+            else:
+                intervention.status = 'paused'
+
+        if instance.need_refit:
+            intervention.status = 'active'
+
+        if instance.allow_resume_pointe and instance.pain_level <= 3:
+            intervention.status = 'closed'
+            intervention.closed_at = timezone.now()
+
+        next_review = instance.review_date + __import__('datetime').timedelta(days=7)
+        intervention.next_review_date = next_review
+        intervention.save()
+
+        if intervention.related_training_plan:
+            plan = intervention.related_training_plan
+            if instance.pain_change == 'worsened':
+                plan.risk_level = 'high'
+                plan.risk_reasons = f'干预复查疼痛加重，部位：{intervention.get_pain_location_display()}'
+                plan.adjustment_suggestion = 'pause'
+            elif instance.pain_change == 'stable' and instance.pain_level >= 5:
+                if plan.risk_level not in ['high']:
+                    plan.risk_level = 'medium'
+                plan.risk_reasons = f'干预复查疼痛稳定但等级较高({instance.pain_level}/10)'
+                plan.adjustment_suggestion = 'downgrade'
+            elif instance.pain_change == 'improved' and instance.pain_level <= 3:
+                plan.risk_level = 'normal'
+                plan.risk_reasons = ''
+                plan.adjustment_suggestion = 'none'
+            plan.save()
+
+        if intervention.related_wear_alert:
+            alert = intervention.related_wear_alert
+            if instance.pain_change == 'improved' and instance.pain_level <= 3:
+                alert.status = 'resolved'
+                alert.resolved_at = timezone.now()
+                alert.save()
+
+        InterventionReminder.generate_reminders()
+
+        return instance
+
+
+class InterventionReminderSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='student.name', read_only=True)
+    reminder_type_display = serializers.CharField(source='get_reminder_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    intervention_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InterventionReminder
+        fields = '__all__'
+        read_only_fields = ['created_at', 'acknowledged_at', 'resolved_at']
+
+    def get_intervention_info(self, obj):
+        return {
+            'id': obj.intervention.id,
+            'pain_location': obj.intervention.pain_location,
+            'pain_location_display': obj.intervention.get_pain_location_display(),
+            'status': obj.intervention.status,
+        }
+
+
+class InterventionReminderHandleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterventionReminder
+        fields = ['handled_by', 'handling_notes']
+
+
+class RehabilitationStatisticsSerializer(serializers.Serializer):
+    pain_location_distribution = serializers.ListField()
+    level_intervention_count = serializers.ListField()
+    avg_recovery_days = serializers.FloatField()
+    review_overdue_rate = serializers.FloatField()
+    intervention_measure_effectiveness = serializers.ListField()
+    total_interventions = serializers.IntegerField()
+    active_interventions = serializers.IntegerField()
+    closed_interventions = serializers.IntegerField()
+    total_reviews = serializers.IntegerField()
+    total_reminders = serializers.IntegerField()
+    pending_reminders = serializers.IntegerField()

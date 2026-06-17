@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   getTrainingPlans, createTrainingPlan, updateTrainingPlan, deleteTrainingPlan,
-  getStudents, getShoeFittings, pausePlan, resumePlan, completePlan, assessPlanRisk
+  getStudents, getShoeFittings, pausePlan, resumePlan, completePlan, assessPlanRisk, getInjuryInterventions
 } from '../api';
 import {
   PLAN_STATUS_MAP, PLAN_RISK_LEVEL_MAP, PLAN_ADJUSTMENT_MAP,
-  TARGET_LEVEL_MAP, LEVEL_MAP
+  TARGET_LEVEL_MAP, LEVEL_MAP, INTERVENTION_STATUS_MAP, INTERVENTION_PAIN_LOCATION_MAP, INTERVENTION_TRIGGER_MAP
 } from '../constants';
 
 const defaultForm = {
@@ -38,6 +38,9 @@ export default function TrainingPlans() {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState(defaultForm);
+  const [showInterventionModal, setShowInterventionModal] = useState(false);
+  const [planInterventions, setPlanInterventions] = useState([]);
+  const [interventionPlanName, setInterventionPlanName] = useState('');
 
   const fetchStudents = async () => {
     const res = await getStudents({ page_size: 100 });
@@ -149,6 +152,18 @@ export default function TrainingPlans() {
     fetchData(page, filterStudent, filterStatus, filterRisk, filterTeacher);
   };
 
+  const handleViewPlanInterventions = async (plan) => {
+    setInterventionPlanName(plan.plan_name);
+    try {
+      const res = await getInjuryInterventions({ student: plan.student?.id || plan.student, page_size: 100 });
+      const results = res.results || res;
+      setPlanInterventions(Array.isArray(results) ? results : []);
+    } catch {
+      setPlanInterventions([]);
+    }
+    setShowInterventionModal(true);
+  };
+
   const handleStudentChange = (studentId) => {
     setForm({ ...form, student: studentId, shoe_fitting: '', foot_profile: '' });
     fetchFittings(studentId);
@@ -240,6 +255,7 @@ export default function TrainingPlans() {
                   <div className="actions-cell">
                     <button className="btn btn-outline btn-sm" onClick={() => handleEdit(p)}>编辑</button>
                     <button className="btn btn-info btn-sm" onClick={() => handleAssessRisk(p.id)}>评估</button>
+                    <button className="btn btn-warning btn-sm" onClick={() => handleViewPlanInterventions(p)}>干预</button>
                     {p.status === 'active' && (
                       <button className="btn btn-warning btn-sm" onClick={() => handlePause(p.id)}>暂停</button>
                     )}
@@ -336,6 +352,51 @@ export default function TrainingPlans() {
                 <button type="submit" className="btn btn-primary">保存</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showInterventionModal && (
+        <div className="modal-overlay" onClick={() => setShowInterventionModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 900 }}>
+            <h3>{interventionPlanName} - 伤病干预记录</h3>
+            {planInterventions.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: 20 }}>暂无干预记录</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>疼痛部位</th>
+                    <th>疼痛等级</th>
+                    <th>触发来源</th>
+                    <th>干预措施</th>
+                    <th>状态</th>
+                    <th>复查日期</th>
+                    <th>是否逾期</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {planInterventions.map(iv => (
+                    <tr key={iv.id}>
+                      <td>{INTERVENTION_PAIN_LOCATION_MAP[iv.pain_location] || iv.pain_location || '-'}</td>
+                      <td>{iv.pain_level ?? '-'}</td>
+                      <td>{INTERVENTION_TRIGGER_MAP[iv.trigger_source] || iv.trigger_source || '-'}</td>
+                      <td>{iv.intervention_measures || '-'}</td>
+                      <td>
+                        <span className={`badge ${iv.status === 'active' ? 'badge-danger' : iv.status === 'paused' ? 'badge-warning' : 'badge-success'}`}>
+                          {INTERVENTION_STATUS_MAP[iv.status] || iv.status}
+                        </span>
+                      </td>
+                      <td>{formatDate(iv.next_review_date)}</td>
+                      <td>{iv.is_review_overdue ? <span className="badge badge-danger" style={{ fontSize: 11 }}>逾期</span> : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setShowInterventionModal(false)}>关闭</button>
+            </div>
           </div>
         </div>
       )}

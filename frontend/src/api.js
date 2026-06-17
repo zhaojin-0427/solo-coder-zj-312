@@ -87,3 +87,25 @@ export const deletePhaseEvaluation = (id) => api.delete(`/phase-evaluations/${id
 
 export const getPlanRiskAlerts = () => api.get('/plan-risk-alerts/').then(r => r.data);
 export const getPlanStatistics = () => api.get('/plan-statistics/').then(r => r.data);
+
+export const getInjuryInterventions = (params) => api.get('/injury-interventions/', { params }).then(r => r.data);
+export const getInjuryIntervention = (id) => api.get(`/injury-interventions/${id}/`).then(r => r.data);
+export const createInjuryIntervention = (data) => api.post('/injury-interventions/', data).then(r => r.data);
+export const updateInjuryIntervention = (id, data) => api.patch(`/injury-interventions/${id}/`, data).then(r => r.data);
+export const deleteInjuryIntervention = (id) => api.delete(`/injury-interventions/${id}/`);
+export const pauseIntervention = (id) => api.post(`/injury-interventions/${id}/pause/`).then(r => r.data);
+export const resumeIntervention = (id) => api.post(`/injury-interventions/${id}/resume/`).then(r => r.data);
+export const closeIntervention = (id) => api.post(`/injury-interventions/${id}/close/`).then(r => r.data);
+export const getInterventionReviews = (id) => api.get(`/injury-interventions/${id}/reviews/`).then(r => r.data);
+
+export const getRehabilitationReviews = (params) => api.get('/rehabilitation-reviews/', { params }).then(r => r.data);
+export const createRehabilitationReview = (data) => api.post('/rehabilitation-reviews/', data).then(r => r.data);
+export const updateRehabilitationReview = (id, data) => api.patch(`/rehabilitation-reviews/${id}/`, data).then(r => r.data);
+
+export const getInterventionReminders = (params) => api.get('/intervention-reminders/', { params }).then(r => r.data);
+export const acknowledgeInterventionReminder = (id, data) => api.post(`/intervention-reminders/${id}/acknowledge/`, data).then(r => r.data);
+export const resolveInterventionReminder = (id, data) => api.post(`/intervention-reminders/${id}/resolve/`, data).then(r => r.data);
+export const dismissInterventionReminder = (id) => api.post(`/intervention-reminders/${id}/dismiss/`).then(r => r.data);
+export const generateInterventionReminders = () => api.post('/intervention-reminders/generate-reminders/').then(r => r.data);
+
+export const getRehabilitationStatistics = () => api.get('/rehabilitation-statistics/').then(r => r.data);

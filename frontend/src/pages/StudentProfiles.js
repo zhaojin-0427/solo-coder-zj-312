@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile, getStudentBorrowings, getTrainingPlans, getPhaseEvaluations } from '../api';
-import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP, BORROWING_PURPOSE_MAP, BORROWING_STATUS_MAP, PLAN_STATUS_MAP, PLAN_RISK_LEVEL_MAP, ACHIEVEMENT_MAP, PROGRESS_SUGGESTION_MAP } from '../constants';
+import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile, getStudentBorrowings, getTrainingPlans, getPhaseEvaluations, getInjuryInterventions } from '../api';
+import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP, BORROWING_PURPOSE_MAP, BORROWING_STATUS_MAP, PLAN_STATUS_MAP, PLAN_RISK_LEVEL_MAP, ACHIEVEMENT_MAP, PROGRESS_SUGGESTION_MAP, INTERVENTION_STATUS_MAP, INTERVENTION_PAIN_LOCATION_MAP } from '../constants';
 
 export default function StudentProfiles() {
   const [students, setStudents] = useState([]);
@@ -19,6 +19,9 @@ export default function StudentProfiles() {
   const [studentPlans, setStudentPlans] = useState([]);
   const [studentEvaluations, setStudentEvaluations] = useState([]);
   const [activeTab, setActiveTab] = useState('current');
+  const [studentInterventions, setStudentInterventions] = useState([]);
+  const [showInterventionModal, setShowInterventionModal] = useState(false);
+  const [interventionStudent, setInterventionStudent] = useState(null);
   const [form, setForm] = useState({ name: '', level: 'beginner', age: '', phone: '' });
   const [profileForm, setProfileForm] = useState({
     foot_length: '', foot_width: '', arch_height: 'medium',
@@ -108,6 +111,18 @@ export default function StudentProfiles() {
     setShowBorrowingModal(true);
   };
 
+  const handleViewInterventions = async (student) => {
+    setInterventionStudent(student);
+    try {
+      const res = await getInjuryInterventions({ student: student.id, page_size: 100 });
+      const results = res.results || res;
+      setStudentInterventions(Array.isArray(results) ? results : []);
+    } catch {
+      setStudentInterventions([]);
+    }
+    setShowInterventionModal(true);
+  };
+
   const handleViewPlans = async (student) => {
     setPlanStudent(student);
     setActiveTab('current');
@@ -176,6 +191,7 @@ export default function StudentProfiles() {
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewProfile(s.id)}>足型</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewPlans(s)}>计划</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewBorrowingHistory(s)}>借用</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleViewInterventions(s)}>干预</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleEdit(s)}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>删除</button>
                   </div>
@@ -570,6 +586,60 @@ export default function StudentProfiles() {
 
             <div className="modal-actions">
               <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showInterventionModal && (
+        <div className="modal-overlay" onClick={() => setShowInterventionModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 900 }}>
+            <h3>{interventionStudent?.name} - 伤痛干预记录</h3>
+            {studentInterventions.length > 0 ? (
+              <div className="card" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
+                <table>
+                  <thead style={{ position: 'sticky', top: 0, background: '#f8f7ff' }}>
+                    <tr>
+                      <th>疼痛部位</th>
+                      <th>疼痛等级</th>
+                      <th>触发来源</th>
+                      <th>干预措施</th>
+                      <th>负责教师</th>
+                      <th>状态</th>
+                      <th>复查日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {studentInterventions.map(iv => (
+                      <tr key={iv.id}>
+                        <td>{INTERVENTION_PAIN_LOCATION_MAP[iv.pain_location] || iv.pain_location}</td>
+                        <td>{iv.pain_level || '-'}</td>
+                        <td>{iv.trigger_source || '-'}</td>
+                        <td>{iv.intervention_measures || '-'}</td>
+                        <td>{iv.responsible_teacher || '-'}</td>
+                        <td>
+                          <span className={`badge ${
+                            iv.status === 'active' ? 'badge-danger' :
+                            iv.status === 'paused' ? 'badge-warning' :
+                            iv.status === 'closed' ? 'badge-success' : 'badge-secondary'
+                          }`}>
+                            {INTERVENTION_STATUS_MAP[iv.status]}
+                          </span>
+                          {iv.is_review_overdue && (
+                            <span className="badge badge-danger" style={{ marginLeft: 4, fontSize: 10 }}>逾期</span>
+                          )}
+                        </td>
+                        <td>{formatDate(iv.next_review_date)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state"><p>暂无干预记录</p></div>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setShowInterventionModal(false)}>关闭</button>
             </div>
           </div>
         </div>
