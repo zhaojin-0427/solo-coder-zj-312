@@ -61,16 +61,21 @@ for s in students:
         )
         fittings.append(f)
 
+today = date.today()
 for f in fittings:
-    num_logs = random.randint(15, 40)
+    max_days = (today - f.fitting_date).days
+    num_logs = min(random.randint(15, 40), max_days // 2 + 1)
     for j in range(num_logs):
+        log_date = f.fitting_date + timedelta(days=j * 2 + random.randint(0, 2))
+        if log_date > today:
+            log_date = today - timedelta(days=random.randint(0, j))
         dur = random.randint(60, 180)
         pain_loc = random.choice(pain_locs)
         pain_lvl = random.randint(0, 8) if pain_loc != 'none' else 0
         TrainingLog.objects.create(
             student=f.student,
             shoe_fitting=f,
-            date=f.fitting_date + timedelta(days=j * 2 + random.randint(0, 2)),
+            date=log_date,
             duration_minutes=dur,
             stability=random.choice(stabilities),
             pain_location=pain_loc,

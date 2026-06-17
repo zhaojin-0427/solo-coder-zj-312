@@ -7,6 +7,16 @@ export default function WearAlerts() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filterStatus, setFilterStatus] = useState('');
+  const [pendingTotal, setPendingTotal] = useState(0);
+
+  const fetchPendingTotal = async () => {
+    try {
+      const res = await getWearAlerts({ status: 'pending', page_size: 1 });
+      setPendingTotal(res.count || 0);
+    } catch {
+      setPendingTotal(0);
+    }
+  };
 
   const fetchData = async (p = 1, status = '') => {
     const params = { page: p };
@@ -18,16 +28,21 @@ export default function WearAlerts() {
     setPage(p);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    fetchPendingTotal();
+  }, []);
 
   const handleResolve = async (id) => {
     await resolveAlert(id);
     fetchData(page, filterStatus);
+    fetchPendingTotal();
   };
 
   const handleAcknowledge = async (id) => {
     await acknowledgeAlert(id);
     fetchData(page, filterStatus);
+    fetchPendingTotal();
   };
 
   const statusBadge = (s) => {
@@ -45,15 +60,13 @@ export default function WearAlerts() {
     return map[s] || '';
   };
 
-  const pendingCount = alerts.filter(a => a.status === 'pending').length;
-
   return (
     <div>
       <div className="page-header">
         <h2>磨损预警</h2>
-        {pendingCount > 0 && (
+        {pendingTotal > 0 && (
           <span className="badge badge-danger" style={{ fontSize: 14, padding: '6px 14px' }}>
-            {pendingCount} 条待处理
+            {pendingTotal} 条待处理
           </span>
         )}
       </div>

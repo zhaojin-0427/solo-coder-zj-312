@@ -18,6 +18,10 @@ export default function TrainingLogs() {
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState(defaultForm);
 
+  const filteredFittings = form.student
+    ? fittings.filter(f => String(f.student) === form.student || f.student === Number(form.student))
+    : fittings;
+
   const fetchStudents = async () => {
     const res = await getStudents({ page_size: 100 });
     const results = res.results || res;
@@ -160,16 +164,16 @@ export default function TrainingLogs() {
               <div className="form-grid">
                 <div className="form-group">
                   <label>学员</label>
-                  <select value={form.student} onChange={e => setForm({ ...form, student: e.target.value })} required>
+                  <select value={form.student} onChange={e => setForm({ ...form, student: e.target.value, shoe_fitting: '' })} required>
                     <option value="">请选择学员</option>
                     {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label>关联鞋子 (可选)</label>
-                  <select value={form.shoe_fitting} onChange={e => setForm({ ...form, shoe_fitting: e.target.value })}>
-                    <option value="">不关联</option>
-                    {fittings.map(f => <option key={f.id} value={f.id}>{f.brand} {f.last_type} ({f.size})</option>)}
+                  <select value={form.shoe_fitting} onChange={e => setForm({ ...form, shoe_fitting: e.target.value })} disabled={!form.student}>
+                    <option value="">{form.student ? '不关联' : '请先选择学员'}</option>
+                    {filteredFittings.map(f => <option key={f.id} value={f.id}>{f.student_name || ''} - {f.brand} {f.last_type} ({f.size})</option>)}
                   </select>
                 </div>
                 <div className="form-group">
