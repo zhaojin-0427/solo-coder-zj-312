@@ -235,7 +235,7 @@ class PointeShoeInventory(models.Model):
     classroom = models.CharField(max_length=100, blank=True, verbose_name='所在教室')
     cabinet = models.CharField(max_length=50, blank=True, verbose_name='柜位')
     purchase_date = models.DateField(null=True, blank=True, verbose_name='购入日期')
-    entry_date = models.DateField(default=lambda: timezone.now().date(), verbose_name='入库日期')
+    entry_date = models.DateField(auto_now_add=True, verbose_name='入库日期')
     max_borrow_count = models.IntegerField(default=10, verbose_name='最大可借用次数')
     current_borrow_count = models.IntegerField(default=0, verbose_name='已借用次数')
     safety_stock = models.IntegerField(default=1, verbose_name='安全库存数量')
@@ -287,6 +287,7 @@ class ShoeBorrowing(models.Model):
 
     shoe = models.ForeignKey(PointeShoeInventory, on_delete=models.CASCADE, related_name='borrowings', verbose_name='鞋款')
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='shoe_borrowings', verbose_name='学员')
+    fitting = models.ForeignKey(ShoeFitting, on_delete=models.SET_NULL, null=True, blank=True, related_name='borrowings', verbose_name='关联试鞋记录')
     purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES, default='training', verbose_name='借用用途')
     expected_start_time = models.DateTimeField(verbose_name='预计开始时间')
     expected_end_time = models.DateTimeField(verbose_name='预计归还时间')

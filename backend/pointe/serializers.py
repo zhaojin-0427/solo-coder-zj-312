@@ -114,10 +114,31 @@ class PointeShoeInventorySerializer(serializers.ModelSerializer):
         return None
 
 
+class PointeShoeInventoryNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PointeShoeInventory
+        fields = ['id', 'brand', 'last_type', 'size', 'hardness', 'shoe_type', 'status', 'classroom', 'cabinet', 'width', 'box_height', 'remaining_borrow_count', 'current_borrow_count']
+
+class StudentNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = ['id', 'name', 'level', 'age']
+
+class ShoeFittingNestedSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShoeFitting
+        fields = ['id', 'brand', 'last_type', 'size', 'hardness', 'box_height', 'fit_result', 'fitting_date']
+
 class ShoeBorrowingSerializer(serializers.ModelSerializer):
     shoe_brand = serializers.CharField(source='shoe.brand', read_only=True)
     shoe_size = serializers.CharField(source='shoe.size', read_only=True)
     shoe_last_type = serializers.CharField(source='shoe.last_type', read_only=True)
+    shoe = PointeShoeInventoryNestedSerializer(read_only=True)
+    shoe_id = serializers.PrimaryKeyRelatedField(queryset=PointeShoeInventory.objects.all(), source='shoe', write_only=True)
+    student = StudentNestedSerializer(read_only=True)
+    student_id = serializers.PrimaryKeyRelatedField(queryset=Student.objects.all(), source='student', write_only=True)
+    fitting = ShoeFittingNestedSerializer(read_only=True)
+    fitting_id = serializers.PrimaryKeyRelatedField(queryset=ShoeFitting.objects.all(), source='fitting', write_only=True, required=False, allow_null=True)
     student_name = serializers.CharField(source='student.name', read_only=True)
     student_level = serializers.CharField(source='student.level', read_only=True)
     purpose_display = serializers.CharField(source='get_purpose_display', read_only=True)
@@ -243,6 +264,10 @@ class InventoryAlertSerializer(serializers.ModelSerializer):
     alert_type_display = serializers.CharField(source='get_alert_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     shoe_info = serializers.SerializerMethodField()
+    shoe = PointeShoeInventoryNestedSerializer(read_only=True)
+    shoe_id = serializers.PrimaryKeyRelatedField(queryset=PointeShoeInventory.objects.all(), source='shoe', write_only=True, required=False, allow_null=True)
+    student = StudentNestedSerializer(read_only=True)
+    student_id = serializers.PrimaryKeyRelatedField(queryset=Student.objects.all(), source='student', write_only=True, required=False, allow_null=True)
     student_name = serializers.SerializerMethodField()
     borrowing_info = serializers.SerializerMethodField()
 

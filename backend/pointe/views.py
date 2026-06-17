@@ -395,6 +395,7 @@ class ShoeBorrowingViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         student_id = self.request.query_params.get('student')
         shoe_id = self.request.query_params.get('shoe')
+        fitting_id = self.request.query_params.get('fitting')
         status = self.request.query_params.get('status')
         purpose = self.request.query_params.get('purpose')
         date_from = self.request.query_params.get('date_from')
@@ -404,6 +405,8 @@ class ShoeBorrowingViewSet(viewsets.ModelViewSet):
             qs = qs.filter(student_id=student_id)
         if shoe_id:
             qs = qs.filter(shoe_id=shoe_id)
+        if fitting_id:
+            qs = qs.filter(fitting_id=fitting_id)
         if status:
             qs = qs.filter(status=status)
         if purpose:
