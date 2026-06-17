@@ -140,7 +140,10 @@ class WearAlertViewSet(viewsets.ModelViewSet):
         serializer = WearAlertHandleSerializer(alert, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        alert.status = 'followup' if alert.suggested_followup_date else 'handled'
+        if alert.handler and alert.suggested_followup_date:
+            alert.status = 'followup'
+        else:
+            alert.status = 'handled'
         alert.handled_at = timezone.now()
         alert.save()
         return Response(WearAlertSerializer(alert).data)

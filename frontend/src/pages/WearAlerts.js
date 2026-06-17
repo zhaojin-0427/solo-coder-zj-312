@@ -74,7 +74,6 @@ export default function WearAlerts() {
   };
 
   const submitHandle = async () => {
-    if (!handleForm.handler.trim()) return;
     await handleAlert(currentAlert.id, handleForm);
     setShowHandleModal(false);
     setCurrentAlert(null);
@@ -164,6 +163,7 @@ export default function WearAlerts() {
                 <th>状态</th>
                 <th>处置人</th>
                 <th>处置方案</th>
+                <th>备注</th>
                 <th>建议回访</th>
                 <th>实际回访</th>
                 <th>创建时间</th>
@@ -186,6 +186,7 @@ export default function WearAlerts() {
                   </td>
                   <td>{a.handler || '-'}</td>
                   <td style={{ maxWidth: 160 }}>{a.handling_plan || '-'}</td>
+                  <td style={{ maxWidth: 160 }}>{a.handling_notes || '-'}</td>
                   <td>{formatDate(a.suggested_followup_date)}</td>
                   <td>{formatDate(a.actual_followup_date)}</td>
                   <td>{new Date(a.created_at).toLocaleString('zh-CN')}</td>
@@ -227,7 +228,7 @@ export default function WearAlerts() {
             <h3>预警处置</h3>
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div className="form-group">
-                <label>处置人 *</label>
+                <label>处置人</label>
                 <input value={handleForm.handler} onChange={e => setHandleForm({ ...handleForm, handler: e.target.value })} placeholder="请输入处置人姓名" />
               </div>
               <div className="form-group">
@@ -245,7 +246,7 @@ export default function WearAlerts() {
             </div>
             <div className="modal-actions">
               <button className="btn btn-outline" onClick={() => setShowHandleModal(false)}>取消</button>
-              <button className="btn btn-primary" onClick={submitHandle} disabled={!handleForm.handler.trim()}>提交处置</button>
+              <button className="btn btn-primary" onClick={submitHandle}>提交处置</button>
             </div>
           </div>
         </div>
