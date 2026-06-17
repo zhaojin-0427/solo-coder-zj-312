@@ -8,6 +8,7 @@ from .serializers import (
     StudentSerializer, StudentWriteSerializer, FootProfileSerializer,
     ShoeFittingSerializer, TrainingLogSerializer, WearAlertSerializer,
 )
+from .pagination import StandardPagination
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -18,30 +19,29 @@ class StudentViewSet(viewsets.ModelViewSet):
             return StudentWriteSerializer
         return StudentSerializer
 
-    @action(detail=True, methods=['post'], url_path='foot-profile')
-    def create_foot_profile(self, request, pk=None):
+    @action(detail=True, methods=['get', 'post', 'put', 'patch'], url_path='foot-profile')
+    def foot_profile(self, request, pk=None):
         student = self.get_object()
-        if hasattr(student, 'foot_profile'):
-            serializer = FootProfileSerializer(student.foot_profile, data=request.data, partial=True)
+        if request.method == 'GET':
+            if not hasattr(student, 'foot_profile'):
+                return Response({'detail': '足型档案不存在'}, status=status.HTTP_404_NOT_FOUND)
+            serializer = FootProfileSerializer(student.foot_profile)
+            return Response(serializer.data)
         else:
-            data = {**request.data, 'student': student.id}
-            serializer = FootProfileSerializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(student=student)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['get'], url_path='foot-profile')
-    def get_foot_profile(self, request, pk=None):
-        student = self.get_object()
-        if not hasattr(student, 'foot_profile'):
-            return Response({'detail': '足型档案不存在'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = FootProfileSerializer(student.foot_profile)
-        return Response(serializer.data)
+            if hasattr(student, 'foot_profile'):
+                serializer = FootProfileSerializer(student.foot_profile, data=request.data, partial=True)
+            else:
+                data = {**request.data, 'student': student.id}
+                serializer = FootProfileSerializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save(student=student)
+            return Response(serializer.data)
 
 
 class ShoeFittingViewSet(viewsets.ModelViewSet):
     queryset = ShoeFitting.objects.all()
     serializer_class = ShoeFittingSerializer
+    pagination_class = StandardPagination
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -113,6 +113,7 @@ class TrainingLogViewSet(viewsets.ModelViewSet):
 class WearAlertViewSet(viewsets.ModelViewSet):
     queryset = WearAlert.objects.all()
     serializer_class = WearAlertSerializer
+    pagination_class = StandardPagination
 
     def get_queryset(self):
         qs = super().get_queryset()

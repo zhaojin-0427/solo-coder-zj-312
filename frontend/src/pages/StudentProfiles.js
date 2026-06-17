@@ -55,32 +55,37 @@ export default function StudentProfiles() {
 
   const handleViewProfile = async (studentId) => {
     setProfileStudentId(studentId);
+    let formData = {
+      foot_length: '', foot_width: '', arch_height: 'medium',
+      instep_strength: 'medium', past_injuries: '', notes: ''
+    };
+    let profileData = null;
     try {
       const data = await getFootProfile(studentId);
-      setProfileData(data);
-      setProfileForm({
-        foot_length: data.foot_length || '',
-        foot_width: data.foot_width || '',
-        arch_height: data.arch_height || 'medium',
-        instep_strength: data.instep_strength || 'medium',
-        past_injuries: data.past_injuries || '',
-        notes: data.notes || '',
-      });
+      if (data) {
+        profileData = data;
+        formData = {
+          foot_length: data.foot_length !== null && data.foot_length !== undefined ? String(data.foot_length) : '',
+          foot_width: data.foot_width !== null && data.foot_width !== undefined ? String(data.foot_width) : '',
+          arch_height: data.arch_height || 'medium',
+          instep_strength: data.instep_strength || 'medium',
+          past_injuries: data.past_injuries || '',
+          notes: data.notes || '',
+        };
+      }
     } catch {
-      setProfileData(null);
-      setProfileForm({
-        foot_length: '', foot_width: '', arch_height: 'medium',
-        instep_strength: 'medium', past_injuries: '', notes: ''
-      });
+      profileData = null;
     }
-    setShowProfileModal(true);
+    setProfileData(profileData);
+    setProfileForm(formData);
+    setTimeout(() => setShowProfileModal(true), 0);
   };
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     await saveFootProfile(profileStudentId, profileForm);
-    handleViewProfile(profileStudentId);
     setShowProfileModal(false);
+    fetchData(page);
   };
 
   return (
