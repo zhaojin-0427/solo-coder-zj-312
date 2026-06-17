@@ -5,7 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import (
     Student, FootProfile, ShoeFitting, TrainingLog, WearAlert,
-    PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert
+    PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert,
+    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation
 )
 from .serializers import (
     StudentSerializer, StudentWriteSerializer, FootProfileSerializer,
@@ -15,6 +16,8 @@ from .serializers import (
     ShoeBorrowingActionSerializer, ShoeReturnCheckSerializer,
     InventoryAlertSerializer, InventoryAlertHandleSerializer,
     InventoryStatisticsSerializer,
+    TrainingPlanSerializer, WeeklyExecutionRecordSerializer,
+    WeeklyExecutionRecordSubmitSerializer, PhaseEvaluationSerializer,
 )
 from .pagination import StandardPagination
 
@@ -664,4 +667,221 @@ class InventoryStatisticsViewSet(viewsets.ViewSet):
             'maintenance_inventory': maintenance_inventory,
             'total_borrowings': total_borrowings,
             'pending_alerts': pending_alerts,
+        })
+
+
+class TrainingPlanViewSet(viewsets.ModelViewSet):
+    queryset = TrainingPlan.objects.all()
+    serializer_class = TrainingPlanSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('student', 'foot_profile', 'shoe_fitting')
+        student_id = self.request.query_params.get('student')
+        status_filter = self.request.query_params.get('status')
+        risk_level = self.request.query_params.get('risk_level')
+        teacher = self.request.query_params.get('teacher')
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if risk_level:
+            qs = qs.filter(risk_level=risk_level)
+        if teacher:
+            qs = qs.filter(responsible_teacher__icontains=teacher)
+        return qs
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        instance.assess_risk()
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        instance.assess_risk()
+
+    @action(detail=True, methods=['post'], url_path='assess-risk')
+    def assess_risk(self, request, pk=None):
+        plan = self.get_object()
+        risk = plan.assess_risk()
+        serializer = self.get_serializer(plan)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='complete')
+    def complete(self, request, pk=None):
+        plan = self.get_object()
+        if plan.status != 'active':
+            return Response({'detail': '只有进行中的计划可以完成'}, status=status.HTTP_400_BAD_REQUEST)
+        plan.status = 'completed'
+        plan.save()
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=['post'], url_path='pause')
+    def pause(self, request, pk=None):
+        plan = self.get_object()
+        if plan.status != 'active':
+            return Response({'detail': '只有进行中的计划可以暂停'}, status=status.HTTP_400_BAD_REQUEST)
+        plan.status = 'paused'
+        plan.save()
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=['post'], url_path='resume')
+    def resume(self, request, pk=None):
+        plan = self.get_object()
+        if plan.status != 'paused':
+            return Response({'detail': '只有已暂停的计划可以恢复'}, status=status.HTTP_400_BAD_REQUEST)
+        plan.status = 'active'
+        plan.save()
+        return Response(self.get_serializer(plan).data)
+
+
+class WeeklyExecutionRecordViewSet(viewsets.ModelViewSet):
+    queryset = WeeklyExecutionRecord.objects.all()
+    serializer_class = WeeklyExecutionRecordSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('training_plan', 'training_plan__student')
+        plan_id = self.request.query_params.get('training_plan')
+        student_id = self.request.query_params.get('student')
+        if plan_id:
+            qs = qs.filter(training_plan_id=plan_id)
+        if student_id:
+            qs = qs.filter(training_plan__student_id=student_id)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='submit')
+    def submit(self, request, pk=None):
+        record = self.get_object()
+        if record.is_submitted:
+            return Response({'detail': '该周记录已提交，不可重复提交'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = WeeklyExecutionRecordSubmitSerializer(record, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        record.is_submitted = True
+        record.submitted_at = timezone.now()
+        record.submitted_by = request.data.get('submitted_by', '')
+        record.save()
+
+        plan = record.training_plan
+        plan.assess_risk()
+
+        return Response(WeeklyExecutionRecordSerializer(record).data)
+
+
+class PhaseEvaluationViewSet(viewsets.ModelViewSet):
+    queryset = PhaseEvaluation.objects.all()
+    serializer_class = PhaseEvaluationSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('training_plan', 'training_plan__student')
+        plan_id = self.request.query_params.get('training_plan')
+        student_id = self.request.query_params.get('student')
+        if plan_id:
+            qs = qs.filter(training_plan_id=plan_id)
+        if student_id:
+            qs = qs.filter(training_plan__student_id=student_id)
+        return qs
+
+
+class PlanRiskAlertViewSet(viewsets.ViewSet):
+    def list(self, request):
+        risk_plans = TrainingPlan.objects.filter(
+            status='active', risk_level__in=['low', 'medium', 'high']
+        ).select_related('student')
+
+        serializer = TrainingPlanSerializer(risk_plans, many=True)
+        return Response(serializer.data)
+
+
+class PlanStatisticsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        level_map = dict(Student.LEVEL_CHOICES)
+        risk_map = dict(TrainingPlan.RISK_LEVEL_CHOICES)
+        adjustment_map = dict(TrainingPlan.ADJUSTMENT_CHOICES)
+        suggestion_map = dict(PhaseEvaluation.PROGRESS_SUGGESTION_CHOICES)
+
+        plans = TrainingPlan.objects.all()
+        active_plans = plans.filter(status='active')
+        completed_plans = plans.filter(status='completed')
+
+        level_completion_rate = []
+        for level_key, level_label in Student.LEVEL_CHOICES:
+            level_plans = plans.filter(student__level=level_key)
+            total = level_plans.count()
+            completed = level_plans.filter(status='completed').count()
+            level_completion_rate.append({
+                'level': level_key,
+                'level_label': level_label,
+                'total_plans': total,
+                'completed_plans': completed,
+                'completion_rate': round(completed / total * 100, 1) if total > 0 else 0,
+            })
+
+        total_active = active_plans.count()
+        risk_plan_ratio = []
+        for risk_key, risk_label in TrainingPlan.RISK_LEVEL_CHOICES:
+            count = active_plans.filter(risk_level=risk_key).count()
+            risk_plan_ratio.append({
+                'risk_level': risk_key,
+                'risk_label': risk_label,
+                'count': count,
+                'ratio': round(count / total_active * 100, 1) if total_active > 0 else 0,
+            })
+
+        adjustment_counts = {}
+        for plan in active_plans.filter(risk_level__in=['low', 'medium', 'high']):
+            reasons = plan.risk_reasons.split('；') if plan.risk_reasons else []
+            suggestion = adjustment_map.get(plan.adjustment_suggestion, plan.adjustment_suggestion)
+            if suggestion not in adjustment_counts:
+                adjustment_counts[suggestion] = {'suggestion': suggestion, 'reasons': [], 'count': 0}
+            adjustment_counts[suggestion]['count'] += 1
+            adjustment_counts[suggestion]['reasons'].extend(reasons)
+        common_adjustment_reasons = sorted(adjustment_counts.values(), key=lambda x: x['count'], reverse=True)[:10]
+
+        target_achievement_rate = []
+        evaluations = PhaseEvaluation.objects.all()
+        for result_key, result_label in PhaseEvaluation.ACHIEVEMENT_CHOICES:
+            count = evaluations.filter(overall_result=result_key).count()
+            total_eval = evaluations.count()
+            target_achievement_rate.append({
+                'result': result_key,
+                'result_label': result_label,
+                'count': count,
+                'rate': round(count / total_eval * 100, 1) if total_eval > 0 else 0,
+            })
+
+        teacher_data = (
+            plans.values('responsible_teacher')
+            .annotate(
+                total_plans=Count('id'),
+                active_plans=Count('id', filter=Q(status='active')),
+                completed_plans=Count('id', filter=Q(status='completed')),
+                risk_plans=Count('id', filter=Q(status='active', risk_level__in=['low', 'medium', 'high'])),
+                evaluations=Count('phase_evaluations', filter=Q(phase_evaluations__isnull=False)),
+            )
+            .order_by('-total_plans')
+        )
+        teacher_followup = [
+            {
+                'teacher': td['responsible_teacher'],
+                'total_plans': td['total_plans'],
+                'active_plans': td['active_plans'],
+                'completed_plans': td['completed_plans'],
+                'risk_plans': td['risk_plans'],
+                'evaluations': td['evaluations'],
+            }
+            for td in teacher_data
+        ]
+
+        return Response({
+            'level_completion_rate': level_completion_rate,
+            'risk_plan_ratio': risk_plan_ratio,
+            'common_adjustment_reasons': common_adjustment_reasons,
+            'target_achievement_rate': target_achievement_rate,
+            'teacher_followup': teacher_followup,
+            'total_plans': plans.count(),
+            'active_plans': active_plans.count(),
+            'completed_plans': completed_plans.count(),
+            'risk_plans': active_plans.filter(risk_level__in=['low', 'medium', 'high']).count(),
         })

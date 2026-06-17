@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile, getStudentBorrowings } from '../api';
-import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP, BORROWING_PURPOSE_MAP, BORROWING_STATUS_MAP } from '../constants';
+import { getStudents, createStudent, updateStudent, deleteStudent, getFootProfile, saveFootProfile, getStudentBorrowings, getTrainingPlans, getPhaseEvaluations } from '../api';
+import { LEVEL_MAP, ARCH_MAP, INSTEP_MAP, BORROWING_PURPOSE_MAP, BORROWING_STATUS_MAP, PLAN_STATUS_MAP, PLAN_RISK_LEVEL_MAP, ACHIEVEMENT_MAP, PROGRESS_SUGGESTION_MAP } from '../constants';
 
 export default function StudentProfiles() {
   const [students, setStudents] = useState([]);
@@ -9,11 +9,16 @@ export default function StudentProfiles() {
   const [showModal, setShowModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showBorrowingModal, setShowBorrowingModal] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileStudentId, setProfileStudentId] = useState(null);
   const [borrowingHistory, setBorrowingHistory] = useState([]);
   const [borrowingStudent, setBorrowingStudent] = useState(null);
+  const [planStudent, setPlanStudent] = useState(null);
+  const [studentPlans, setStudentPlans] = useState([]);
+  const [studentEvaluations, setStudentEvaluations] = useState([]);
+  const [activeTab, setActiveTab] = useState('current');
   const [form, setForm] = useState({ name: '', level: 'beginner', age: '', phone: '' });
   const [profileForm, setProfileForm] = useState({
     foot_length: '', foot_width: '', arch_height: 'medium',
@@ -103,6 +108,34 @@ export default function StudentProfiles() {
     setShowBorrowingModal(true);
   };
 
+  const handleViewPlans = async (student) => {
+    setPlanStudent(student);
+    setActiveTab('current');
+    try {
+      const [plansRes, evalsRes] = await Promise.all([
+        getTrainingPlans({ student: student.id, page_size: 100 }),
+        getPhaseEvaluations({ student: student.id, page_size: 100 })
+      ]);
+      const plans = plansRes.results || plansRes || [];
+      const evals = evalsRes.results || evalsRes || [];
+      setStudentPlans(Array.isArray(plans) ? plans : []);
+      setStudentEvaluations(Array.isArray(evals) ? evals : []);
+    } catch {
+      setStudentPlans([]);
+      setStudentEvaluations([]);
+    }
+    setShowPlanModal(true);
+  };
+
+  const formatDate = (d) => {
+    if (!d) return '-';
+    return new Date(d).toLocaleDateString('zh-CN');
+  };
+
+  const currentPlan = studentPlans.find(p => p.status === 'active');
+  const historyPlans = studentPlans.filter(p => p.status !== 'active');
+  const latestEvaluation = studentEvaluations.length > 0 ? studentEvaluations[0] : null;
+
   return (
     <div>
       <div className="page-header">
@@ -141,6 +174,7 @@ export default function StudentProfiles() {
                 <td>
                   <div className="actions-cell">
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewProfile(s.id)}>足型</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => handleViewPlans(s)}>计划</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleViewBorrowingHistory(s)}>借用</button>
                     <button className="btn btn-outline btn-sm" onClick={() => handleEdit(s)}>编辑</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>删除</button>
@@ -312,6 +346,230 @@ export default function StudentProfiles() {
             )}
             <div className="modal-actions">
               <button type="button" className="btn btn-primary" onClick={() => setShowBorrowingModal(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPlanModal && (
+        <div className="modal-overlay" onClick={() => setShowPlanModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 900 }}>
+            <h3>{planStudent?.name} - 训练计划</h3>
+
+            <div className="tabs">
+              <button
+                className={`tab-btn ${activeTab === 'current' ? 'active' : ''}`}
+                onClick={() => setActiveTab('current')}
+              >
+                当前计划
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+                onClick={() => setActiveTab('history')}
+              >
+                历史计划
+              </button>
+              <button
+                className={`tab-btn ${activeTab === 'evaluation' ? 'active' : ''}`}
+                onClick={() => setActiveTab('evaluation')}
+              >
+                阶段评估
+              </button>
+            </div>
+
+            {activeTab === 'current' && (
+              <div>
+                {currentPlan ? (
+                  <div className="card" style={{ background: '#f0fff4' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <h4 style={{ margin: 0 }}>{currentPlan.plan_name}</h4>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <span className={`badge ${currentPlan.status === 'active' ? 'badge-success' : 'badge-info'}`}>
+                          {PLAN_STATUS_MAP[currentPlan.status]}
+                        </span>
+                        <span className={`badge ${
+                          currentPlan.risk_level === 'high' ? 'badge-danger' :
+                          currentPlan.risk_level === 'medium' ? 'badge-info' :
+                          currentPlan.risk_level === 'low' ? 'badge-warning' : 'badge-success'
+                        }`}>
+                          {PLAN_RISK_LEVEL_MAP[currentPlan.risk_level]}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="profile-card">
+                      <div className="profile-item">
+                        <span className="label">计划周期</span>
+                        <span className="value">{formatDate(currentPlan.start_date)} ~ {formatDate(currentPlan.end_date)}</span>
+                      </div>
+                      <div className="profile-item">
+                        <span className="label">目标级别</span>
+                        <span className="value">{LEVEL_MAP[currentPlan.target_level] || currentPlan.target_level}</span>
+                      </div>
+                      <div className="profile-item">
+                        <span className="label">周时长上限</span>
+                        <span className="value">{currentPlan.weekly_max_duration} 分钟</span>
+                      </div>
+                      <div className="profile-item">
+                        <span className="label">负责教师</span>
+                        <span className="value">{currentPlan.responsible_teacher || '-'}</span>
+                      </div>
+                      <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                        <span className="label">进度</span>
+                        <span className="value">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, maxWidth: 200, height: 6, background: 'var(--border)', borderRadius: 3 }}>
+                              <div style={{ height: '100%', width: `${currentPlan.progress_percent || 0}%`, background: 'var(--primary)' }} />
+                            </div>
+                            <span>{currentPlan.progress_percent || 0}%</span>
+                          </div>
+                        </span>
+                      </div>
+                      <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                        <span className="label">重点练习动作</span>
+                        <span className="value">{currentPlan.key_exercises || '-'}</span>
+                      </div>
+                      {currentPlan.forbidden_exercises && (
+                        <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">禁忌动作</span>
+                          <span className="value" style={{ color: 'var(--danger)' }}>{currentPlan.forbidden_exercises}</span>
+                        </div>
+                      )}
+                      {currentPlan.strength_training && (
+                        <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">辅助力量训练</span>
+                          <span className="value">{currentPlan.strength_training}</span>
+                        </div>
+                      )}
+                      <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                        <span className="label">阶段评估标准</span>
+                        <span className="value">{currentPlan.evaluation_criteria || '-'}</span>
+                      </div>
+                      {currentPlan.risk_reasons && (
+                        <div className="profile-item" style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">风险原因</span>
+                          <span className="value" style={{ color: 'var(--danger)' }}>{currentPlan.risk_reasons}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty-state"><p>暂无进行中的训练计划</p></div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'history' && (
+              <div>
+                {historyPlans.length > 0 ? (
+                  <div className="card" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
+                    <table>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8f7ff' }}>
+                        <tr>
+                          <th>计划名称</th>
+                          <th>目标级别</th>
+                          <th>周期</th>
+                          <th>状态</th>
+                          <th>风险等级</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historyPlans.map(p => (
+                          <tr key={p.id}>
+                            <td><strong>{p.plan_name}</strong></td>
+                            <td>{LEVEL_MAP[p.target_level] || p.target_level}</td>
+                            <td>
+                              <div style={{ fontSize: 12 }}>{formatDate(p.start_date)}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>至 {formatDate(p.end_date)}</div>
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                p.status === 'completed' ? 'badge-info' :
+                                p.status === 'paused' ? 'badge-warning' : 'badge-secondary'
+                              }`}>
+                                {PLAN_STATUS_MAP[p.status]}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                p.risk_level === 'high' ? 'badge-danger' :
+                                p.risk_level === 'medium' ? 'badge-info' :
+                                p.risk_level === 'low' ? 'badge-warning' : 'badge-success'
+                              }`}>
+                                {PLAN_RISK_LEVEL_MAP[p.risk_level]}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state"><p>暂无历史计划</p></div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'evaluation' && (
+              <div>
+                {studentEvaluations.length > 0 ? (
+                  <div className="card" style={{ maxHeight: 400, overflowY: 'auto', padding: 0 }}>
+                    <table>
+                      <thead style={{ position: 'sticky', top: 0, background: '#f8f7ff' }}>
+                        <tr>
+                          <th>评估阶段</th>
+                          <th>评估日期</th>
+                          <th>目标达成</th>
+                          <th>稳定度</th>
+                          <th>总体结果</th>
+                          <th>发展建议</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentEvaluations.map(e => (
+                          <tr key={e.id}>
+                            <td><strong>{e.phase_name}</strong></td>
+                            <td>{formatDate(e.evaluation_date)}</td>
+                            <td>
+                              <span className={`badge ${
+                                e.target_achievement === 'excellent' ? 'badge-success' :
+                                e.target_achievement === 'good' ? 'badge-info' :
+                                e.target_achievement === 'fair' ? 'badge-warning' : 'badge-danger'
+                              }`}>
+                                {ACHIEVEMENT_MAP[e.target_achievement]}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                e.stability_evaluation === 'excellent' ? 'badge-success' :
+                                e.stability_evaluation === 'good' ? 'badge-info' :
+                                e.stability_evaluation === 'fair' ? 'badge-warning' : 'badge-danger'
+                              }`}>
+                                {ACHIEVEMENT_MAP[e.stability_evaluation]}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`badge ${
+                                e.overall_result === 'excellent' ? 'badge-success' :
+                                e.overall_result === 'good' ? 'badge-info' :
+                                e.overall_result === 'fair' ? 'badge-warning' : 'badge-danger'
+                              }`}>
+                                {ACHIEVEMENT_MAP[e.overall_result]}
+                              </span>
+                            </td>
+                            <td>{PROGRESS_SUGGESTION_MAP[e.progress_suggestion] || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state"><p>暂无阶段评估记录</p></div>
+                )}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button type="button" className="btn btn-primary" onClick={() => setShowPlanModal(false)}>关闭</button>
             </div>
           </div>
         </div>

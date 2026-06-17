@@ -3,7 +3,9 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     StudentViewSet, ShoeFittingViewSet, TrainingLogViewSet, WearAlertViewSet, StatisticsViewSet,
     PointeShoeInventoryViewSet, ShoeBorrowingViewSet, ShoeReturnCheckViewSet,
-    InventoryAlertViewSet, InventoryStatisticsViewSet
+    InventoryAlertViewSet, InventoryStatisticsViewSet,
+    TrainingPlanViewSet, WeeklyExecutionRecordViewSet, PhaseEvaluationViewSet,
+    PlanRiskAlertViewSet, PlanStatisticsViewSet
 )
 
 router = DefaultRouter()
@@ -17,6 +19,11 @@ router.register(r'shoe-borrowings', ShoeBorrowingViewSet)
 router.register(r'shoe-return-checks', ShoeReturnCheckViewSet)
 router.register(r'inventory-alerts', InventoryAlertViewSet)
 router.register(r'inventory-statistics', InventoryStatisticsViewSet, basename='inventory-statistics')
+router.register(r'training-plans', TrainingPlanViewSet)
+router.register(r'weekly-records', WeeklyExecutionRecordViewSet)
+router.register(r'phase-evaluations', PhaseEvaluationViewSet)
+router.register(r'plan-risk-alerts', PlanRiskAlertViewSet, basename='plan-risk-alerts')
+router.register(r'plan-statistics', PlanStatisticsViewSet, basename='plan-statistics')
 
 urlpatterns = [
     path('api/', include(router.urls)),

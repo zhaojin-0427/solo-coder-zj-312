@@ -153,3 +153,55 @@ export const INVENTORY_ALERT_STATUS_MAP = {
   resolved: '已解决',
   dismissed: '已忽略',
 };
+
+export const PLAN_STATUS_MAP = {
+  active: '进行中',
+  completed: '已完成',
+  paused: '已暂停',
+  cancelled: '已取消',
+};
+
+export const PLAN_RISK_LEVEL_MAP = {
+  normal: '正常',
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+};
+
+export const PLAN_ADJUSTMENT_MAP = {
+  none: '无需调整',
+  downgrade: '建议降级训练',
+  pause: '建议暂停上鞋',
+  insole: '建议调整鞋垫',
+  refit: '建议重新试鞋',
+  strengthen: '建议加强力量训练',
+  stretch: '建议增加拉伸',
+};
+
+export const TARGET_LEVEL_MAP = {
+  beginner: '初级',
+  intermediate: '中级',
+  advanced: '高级',
+  professional: '专业',
+};
+
+export const EXERCISE_COMPLETION_MAP = {
+  excellent: '优秀(≥90%)',
+  good: '良好(70-89%)',
+  fair: '一般(50-69%)',
+  poor: '较差(<50%)',
+};
+
+export const ACHIEVEMENT_MAP = {
+  excellent: '优秀',
+  good: '良好',
+  fair: '一般',
+  poor: '未达标',
+};
+
+export const PROGRESS_SUGGESTION_MAP = {
+  promote: '建议晋级',
+  continue: '继续当前阶段',
+  adjust: '调整计划后继续',
+  regress: '建议降级',
+};

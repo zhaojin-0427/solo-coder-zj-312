@@ -3,7 +3,8 @@ from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
     Student, FootProfile, ShoeFitting, TrainingLog, WearAlert,
-    PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert
+    PointeShoeInventory, ShoeBorrowing, ShoeReturnCheck, InventoryAlert,
+    TrainingPlan, WeeklyExecutionRecord, PhaseEvaluation
 )
 
 
@@ -319,3 +320,101 @@ class InventoryStatisticsSerializer(serializers.Serializer):
     maintenance_inventory = serializers.IntegerField()
     total_borrowings = serializers.IntegerField()
     pending_alerts = serializers.IntegerField()
+
+
+class TrainingPlanSerializer(serializers.ModelSerializer):
+    student_name = serializers.CharField(source='student.name', read_only=True)
+    student_level = serializers.CharField(source='student.level', read_only=True)
+    target_level_display = serializers.CharField(source='get_target_level_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    risk_level_display = serializers.CharField(source='get_risk_level_display', read_only=True)
+    adjustment_suggestion_display = serializers.CharField(source='get_adjustment_suggestion_display', read_only=True)
+    progress_percent = serializers.FloatField(read_only=True)
+    current_week_number = serializers.IntegerField(read_only=True)
+    latest_evaluation = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TrainingPlan
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'risk_level', 'risk_reasons', 'adjustment_suggestion']
+
+    def get_latest_evaluation(self, obj):
+        latest = obj.phase_evaluations.order_by('-evaluation_date').first()
+        if latest:
+            return PhaseEvaluationSerializer(latest).data
+        return None
+
+    def validate(self, data):
+        if data.get('start_date') and data.get('end_date'):
+            if data['start_date'] >= data['end_date']:
+                raise ValidationError('开始日期必须早于结束日期')
+        if data.get('weekly_max_duration') and data['weekly_max_duration'] <= 0:
+            raise ValidationError('每周上鞋时长上限必须大于0')
+
+        student = data.get('student')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        if student and start_date and end_date:
+            qs = TrainingPlan.objects.filter(
+                student=student,
+                status='active',
+                start_date__lt=end_date,
+                end_date__gt=start_date,
+            )
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise ValidationError('该学员在所选时间段内已有进行中的训练计划')
+        return data
+
+
+class WeeklyExecutionRecordSerializer(serializers.ModelSerializer):
+    exercise_completion_display = serializers.CharField(source='get_exercise_completion_display', read_only=True)
+    pain_location_display = serializers.CharField(source='get_pain_location_display', read_only=True)
+
+    class Meta:
+        model = WeeklyExecutionRecord
+        fields = '__all__'
+        read_only_fields = ['created_at', 'updated_at', 'is_submitted', 'submitted_at', 'submitted_by']
+
+    def validate_stability_score(self, value):
+        if value is not None and (value < 0 or value > 100):
+            raise ValidationError('稳定度评分范围为0-100')
+        return value
+
+    def validate_pain_level(self, value):
+        if value < 0 or value > 10:
+            raise ValidationError('疼痛等级范围为0-10')
+        return value
+
+
+class WeeklyExecutionRecordSubmitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WeeklyExecutionRecord
+        fields = ['actual_duration', 'exercise_completion', 'stability_score',
+                   'pain_location', 'pain_level', 'teacher_comments',
+                   'needs_adjustment', 'adjustment_reason']
+
+
+class PhaseEvaluationSerializer(serializers.ModelSerializer):
+    target_achievement_display = serializers.CharField(source='get_target_achievement_display', read_only=True)
+    stability_evaluation_display = serializers.CharField(source='get_stability_evaluation_display', read_only=True)
+    strength_evaluation_display = serializers.CharField(source='get_strength_evaluation_display', read_only=True)
+    pain_status_display = serializers.CharField(source='get_pain_status_display', read_only=True)
+    overall_result_display = serializers.CharField(source='get_overall_result_display', read_only=True)
+    progress_suggestion_display = serializers.CharField(source='get_progress_suggestion_display', read_only=True)
+    plan_name = serializers.CharField(source='training_plan.plan_name', read_only=True)
+    student_name = serializers.CharField(source='training_plan.student.name', read_only=True)
+
+    class Meta:
+        model = PhaseEvaluation
+        fields = '__all__'
+        read_only_fields = ['created_at']
+
+
+class PlanStatisticsSerializer(serializers.Serializer):
+    level_completion_rate = serializers.ListField()
+    risk_plan_ratio = serializers.ListField()
+    common_adjustment_reasons = serializers.ListField()
+    target_achievement_rate = serializers.ListField()
+    teacher_followup = serializers.ListField()

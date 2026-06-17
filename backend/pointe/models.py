@@ -368,6 +368,243 @@ class ShoeReturnCheck(models.Model):
         return f'{self.shoe.brand} 归还检查 - {self.return_date}'
 
 
+class TrainingPlan(models.Model):
+    STATUS_CHOICES = [
+        ('active', '进行中'),
+        ('completed', '已完成'),
+        ('paused', '已暂停'),
+        ('cancelled', '已取消'),
+    ]
+    RISK_LEVEL_CHOICES = [
+        ('normal', '正常'),
+        ('low', '低风险'),
+        ('medium', '中风险'),
+        ('high', '高风险'),
+    ]
+    ADJUSTMENT_CHOICES = [
+        ('none', '无需调整'),
+        ('downgrade', '建议降级训练'),
+        ('pause', '建议暂停上鞋'),
+        ('insole', '建议调整鞋垫'),
+        ('refit', '建议重新试鞋'),
+        ('strengthen', '建议加强力量训练'),
+        ('stretch', '建议增加拉伸'),
+    ]
+    TARGET_LEVEL_CHOICES = [
+        ('beginner', '初级'),
+        ('intermediate', '中级'),
+        ('advanced', '高级'),
+        ('professional', '专业'),
+    ]
+
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='training_plans', verbose_name='学员')
+    foot_profile = models.ForeignKey(FootProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='training_plans', verbose_name='足型档案')
+    shoe_fitting = models.ForeignKey(ShoeFitting, on_delete=models.SET_NULL, null=True, blank=True, related_name='training_plans', verbose_name='试鞋记录')
+    plan_name = models.CharField(max_length=200, verbose_name='计划名称')
+    start_date = models.DateField(verbose_name='开始日期')
+    end_date = models.DateField(verbose_name='结束日期')
+    target_level = models.CharField(max_length=20, choices=TARGET_LEVEL_CHOICES, verbose_name='训练级别目标')
+    weekly_max_duration = models.IntegerField(verbose_name='每周上鞋时长上限(分钟)')
+    key_exercises = models.TextField(verbose_name='重点练习动作')
+    forbidden_exercises = models.TextField(blank=True, verbose_name='禁忌动作')
+    strength_training = models.TextField(blank=True, verbose_name='辅助力量训练')
+    evaluation_criteria = models.TextField(verbose_name='阶段评估标准')
+    responsible_teacher = models.CharField(max_length=100, verbose_name='负责教师')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='状态')
+    risk_level = models.CharField(max_length=20, choices=RISK_LEVEL_CHOICES, default='normal', verbose_name='风险等级')
+    risk_reasons = models.TextField(blank=True, verbose_name='风险原因')
+    adjustment_suggestion = models.CharField(max_length=20, choices=ADJUSTMENT_CHOICES, default='none', verbose_name='调整建议')
+    adjustment_notes = models.TextField(blank=True, verbose_name='调整说明')
+    notes = models.TextField(blank=True, verbose_name='备注')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '训练计划'
+        verbose_name_plural = '训练计划'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.student.name} - {self.plan_name}'
+
+    @property
+    def progress_percent(self):
+        records = self.weekly_records.all()
+        if not records.exists():
+            return 0
+        total_weeks = max((self.end_date - self.start_date).days // 7, 1)
+        submitted_weeks = records.filter(is_submitted=True).count()
+        return min(round(submitted_weeks / total_weeks * 100, 1), 100)
+
+    @property
+    def current_week_number(self):
+        today = timezone.now().date()
+        if today < self.start_date:
+            return 0
+        return min((today - self.start_date).days // 7 + 1, max((self.end_date - self.start_date).days // 7, 1))
+
+    def assess_risk(self):
+        reasons = []
+        risk = 'normal'
+        records = self.weekly_records.filter(is_submitted=True).order_by('week_number')
+
+        consecutive_pain_count = 0
+        stability_declining = False
+        prev_stability = None
+        overtime_count = 0
+
+        for r in records:
+            if r.pain_level >= 5:
+                consecutive_pain_count += 1
+            else:
+                consecutive_pain_count = 0
+
+            if prev_stability is not None and r.stability_score is not None and prev_stability is not None:
+                if r.stability_score < prev_stability - 10:
+                    stability_declining = True
+            if r.stability_score is not None:
+                prev_stability = r.stability_score
+
+            if r.actual_duration > self.weekly_max_duration:
+                overtime_count += 1
+
+        if consecutive_pain_count >= 3:
+            risk = 'high'
+            reasons.append(f'连续{consecutive_pain_count}周出现疼痛(等级≥5)')
+        elif consecutive_pain_count >= 2:
+            risk = 'medium'
+            reasons.append(f'连续{consecutive_pain_count}周出现疼痛(等级≥5)')
+
+        if stability_declining:
+            if risk in ('normal', 'low'):
+                risk = 'medium'
+            reasons.append('稳定度评分持续下降(降幅>10)')
+
+        if overtime_count >= 2:
+            if risk == 'normal':
+                risk = 'low'
+            elif risk == 'low':
+                risk = 'medium'
+            reasons.append(f'累计{overtime_count}周超时训练')
+
+        unhandled_wear_alerts = WearAlert.objects.filter(
+            student=self.student, status__in=['pending', 'acknowledged']
+        )
+        if unhandled_wear_alerts.exists():
+            if risk == 'normal':
+                risk = 'low'
+            reasons.append(f'{unhandled_wear_alerts.count()}条磨损预警未处理')
+
+        suggestion = 'none'
+        if risk == 'high':
+            if consecutive_pain_count >= 3:
+                suggestion = 'pause'
+            else:
+                suggestion = 'downgrade'
+        elif risk == 'medium':
+            if stability_declining:
+                suggestion = 'insole'
+            elif consecutive_pain_count >= 2:
+                suggestion = 'downgrade'
+            elif unhandled_wear_alerts.exists():
+                suggestion = 'refit'
+        elif risk == 'low':
+            if overtime_count >= 2:
+                suggestion = 'strengthen'
+            elif unhandled_wear_alerts.exists():
+                suggestion = 'refit'
+
+        self.risk_level = risk
+        self.risk_reasons = '；'.join(reasons) if reasons else ''
+        self.adjustment_suggestion = suggestion
+        self.save(update_fields=['risk_level', 'risk_reasons', 'adjustment_suggestion', 'updated_at'])
+        return risk
+
+
+class WeeklyExecutionRecord(models.Model):
+    EXERCISE_COMPLETION_CHOICES = [
+        ('excellent', '优秀(≥90%)'),
+        ('good', '良好(70-89%)'),
+        ('fair', '一般(50-69%)'),
+        ('poor', '较差(<50%)'),
+    ]
+    PAIN_LOCATION_CHOICES = [
+        ('none', '无疼痛'),
+        ('toe', '脚趾'),
+        ('ball', '前脚掌'),
+        ('arch', '足弓'),
+        ('heel', '脚跟'),
+        ('ankle', '脚踝'),
+        ('instep', '脚背'),
+        ('multiple', '多部位'),
+    ]
+
+    training_plan = models.ForeignKey(TrainingPlan, on_delete=models.CASCADE, related_name='weekly_records', verbose_name='训练计划')
+    week_number = models.IntegerField(verbose_name='周次')
+    week_start_date = models.DateField(verbose_name='周开始日期')
+    week_end_date = models.DateField(verbose_name='周结束日期')
+    actual_duration = models.IntegerField(default=0, verbose_name='实际完成时长(分钟)')
+    exercise_completion = models.CharField(max_length=20, choices=EXERCISE_COMPLETION_CHOICES, default='good', verbose_name='动作完成度')
+    stability_score = models.IntegerField(null=True, blank=True, verbose_name='稳定度评分(0-100)')
+    pain_location = models.CharField(max_length=20, choices=PAIN_LOCATION_CHOICES, default='none', verbose_name='疼痛部位')
+    pain_level = models.IntegerField(default=0, verbose_name='疼痛等级(0-10)')
+    teacher_comments = models.TextField(blank=True, verbose_name='教师评语')
+    needs_adjustment = models.BooleanField(default=False, verbose_name='是否需要调整计划')
+    adjustment_reason = models.TextField(blank=True, verbose_name='调整原因')
+    is_submitted = models.BooleanField(default=False, verbose_name='是否已提交')
+    submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='提交时间')
+    submitted_by = models.CharField(max_length=100, blank=True, verbose_name='提交人')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '周执行记录'
+        verbose_name_plural = '周执行记录'
+        ordering = ['training_plan', 'week_number']
+        unique_together = [('training_plan', 'week_number')]
+
+    def __str__(self):
+        return f'{self.training_plan.plan_name} 第{self.week_number}周'
+
+
+class PhaseEvaluation(models.Model):
+    ACHIEVEMENT_CHOICES = [
+        ('excellent', '优秀'),
+        ('good', '良好'),
+        ('fair', '一般'),
+        ('poor', '未达标'),
+    ]
+    PROGRESS_SUGGESTION_CHOICES = [
+        ('promote', '建议晋级'),
+        ('continue', '继续当前阶段'),
+        ('adjust', '调整计划后继续'),
+        ('regress', '建议降级'),
+    ]
+
+    training_plan = models.ForeignKey(TrainingPlan, on_delete=models.CASCADE, related_name='phase_evaluations', verbose_name='训练计划')
+    evaluation_date = models.DateField(verbose_name='评估日期')
+    phase_name = models.CharField(max_length=100, verbose_name='评估阶段')
+    target_achievement = models.CharField(max_length=20, choices=ACHIEVEMENT_CHOICES, default='good', verbose_name='目标达成情况')
+    stability_evaluation = models.CharField(max_length=20, choices=ACHIEVEMENT_CHOICES, default='good', verbose_name='稳定度评估')
+    strength_evaluation = models.CharField(max_length=20, choices=ACHIEVEMENT_CHOICES, default='good', verbose_name='力量评估')
+    pain_status = models.CharField(max_length=20, choices=ACHIEVEMENT_CHOICES, default='good', verbose_name='疼痛状况')
+    overall_result = models.CharField(max_length=20, choices=ACHIEVEMENT_CHOICES, default='good', verbose_name='总体评估结果')
+    progress_suggestion = models.CharField(max_length=20, choices=PROGRESS_SUGGESTION_CHOICES, default='continue', verbose_name='发展建议')
+    improvement_points = models.TextField(blank=True, verbose_name='改进要点')
+    next_phase_goals = models.TextField(blank=True, verbose_name='下一阶段目标')
+    evaluator = models.CharField(max_length=100, verbose_name='评估人')
+    notes = models.TextField(blank=True, verbose_name='备注')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        verbose_name = '阶段评估'
+        verbose_name_plural = '阶段评估'
+        ordering = ['training_plan', '-evaluation_date']
+
+    def __str__(self):
+        return f'{self.training_plan.plan_name} - {self.phase_name}'
+
+
 class InventoryAlert(models.Model):
     ALERT_TYPE_CHOICES = [
         ('overdue', '借用逾期'),

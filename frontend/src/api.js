@@ -63,3 +63,27 @@ export const getInventoryStatistics = () => api.get('/inventory-statistics/').th
 
 export const getStudentBorrowings = (studentId, params) => api.get(`/shoe-borrowings/`, { params: { ...params, student: studentId } }).then(r => r.data);
 export const getFittingBorrowings = (fittingId, params) => api.get(`/shoe-borrowings/`, { params: { ...params, fitting: fittingId } }).then(r => r.data);
+
+export const getTrainingPlans = (params) => api.get('/training-plans/', { params }).then(r => r.data);
+export const getTrainingPlan = (id) => api.get(`/training-plans/${id}/`).then(r => r.data);
+export const createTrainingPlan = (data) => api.post('/training-plans/', data).then(r => r.data);
+export const updateTrainingPlan = (id, data) => api.patch(`/training-plans/${id}/`, data).then(r => r.data);
+export const deleteTrainingPlan = (id) => api.delete(`/training-plans/${id}/`);
+export const assessPlanRisk = (id) => api.post(`/training-plans/${id}/assess-risk/`).then(r => r.data);
+export const completePlan = (id) => api.post(`/training-plans/${id}/complete/`).then(r => r.data);
+export const pausePlan = (id) => api.post(`/training-plans/${id}/pause/`).then(r => r.data);
+export const resumePlan = (id) => api.post(`/training-plans/${id}/resume/`).then(r => r.data);
+
+export const getWeeklyRecords = (params) => api.get('/weekly-records/', { params }).then(r => r.data);
+export const getWeeklyRecord = (id) => api.get(`/weekly-records/${id}/`).then(r => r.data);
+export const createWeeklyRecord = (data) => api.post('/weekly-records/', data).then(r => r.data);
+export const updateWeeklyRecord = (id, data) => api.patch(`/weekly-records/${id}/`, data).then(r => r.data);
+export const submitWeeklyRecord = (id, data) => api.post(`/weekly-records/${id}/submit/`, data).then(r => r.data);
+
+export const getPhaseEvaluations = (params) => api.get('/phase-evaluations/', { params }).then(r => r.data);
+export const createPhaseEvaluation = (data) => api.post('/phase-evaluations/', data).then(r => r.data);
+export const updatePhaseEvaluation = (id, data) => api.patch(`/phase-evaluations/${id}/`, data).then(r => r.data);
+export const deletePhaseEvaluation = (id) => api.delete(`/phase-evaluations/${id}/`);
+
+export const getPlanRiskAlerts = () => api.get('/plan-risk-alerts/').then(r => r.data);
+export const getPlanStatistics = () => api.get('/plan-statistics/').then(r => r.data);
